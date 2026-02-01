@@ -23,9 +23,9 @@ export class GeminiProvider implements LLMProvider {
 
   constructor(config: GeminiConfig) {
     // 모드별 기본 모델 설정
-    // GCP: gemini-2.5-pro (고품질), API Key: gemini-2.5-flash (빠른 속도)
+    // GCP: gemini-3-pro-preview (최신 프리뷰), API Key: gemini-2.5-flash (빠른 속도)
     const defaultModel =
-      config.mode === "gcp" ? "gemini-2.5-pro" : "gemini-2.5-flash";
+      config.mode === "gcp" ? "gemini-3-pro-preview" : "gemini-2.5-flash";
 
     this.config = {
       ...config,
