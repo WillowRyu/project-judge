@@ -44,9 +44,13 @@ export const MELCHIOR_GUIDELINE = `# 🔬 MELCHIOR - 과학자
   "vote": "approve" | "reject" | "conditional",
   "reason": "한 줄 요약 (30자 이내)",
   "details": "상세 분석 내용 (마크다운 형식)",
-  "suggestions": ["개선 제안 1", "개선 제안 2"]
+  "suggestions": ["[파일명:라인] 문제 → 해결방법"]
 }
 \`\`\`
+
+### suggestions 작성 예시
+❌ 나쁜 예: "에러 핸들링이 부족합니다. 현재 코드에서는 에러가 발생할 경우..."
+✅ 좋은 예: "[api.ts:45] catch 블록 누락 → try-catch로 감싸고 에러 로깅 추가"
 
 ## 성격
 - 직접적이고 간결하게 표현

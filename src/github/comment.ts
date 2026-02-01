@@ -39,58 +39,60 @@ export function generateComment(
   }
   lines.push("");
 
-  // 상세 리뷰 (detailed 모드) - 먼저 배치
+  // ========================================
+  // 상세 분석 섹션
+  // ========================================
   if (options.style === "detailed") {
-    lines.push("---\n");
-    lines.push("### 📝 상세 분석\n");
+    lines.push("---");
+    lines.push("## 📝 상세 분석\n");
 
     for (const review of reviews) {
       lines.push(
-        `<details>\n<summary>${review.personaEmoji} ${review.personaName} 상세 리뷰</summary>\n`,
+        `<details>\n<summary><strong>${review.personaEmoji} ${review.personaName}</strong> (${getVoteEmoji(review.vote)} ${review.vote})</summary>\n`,
       );
-      lines.push(
-        `#### ${getVoteEmoji(review.vote)} ${review.vote.toUpperCase()}\n`,
-      );
-      lines.push(`**판정 이유:** ${review.reason}\n`);
 
       if (review.details) {
-        lines.push("**분석 내용:**\n");
         lines.push(review.details);
-        lines.push("");
       }
 
-      lines.push("</details>\n");
+      lines.push("\n</details>\n");
     }
   }
 
-  // 개선 제안 섹션 (상세 분석 이후)
-  const allSuggestions = collectSuggestions(reviews);
-  if (allSuggestions.length > 0) {
-    lines.push("### 💡 개선 제안\n");
+  // ========================================
+  // 개선 제안 섹션 (페르소나별 그룹화)
+  // ========================================
+  const suggestionsByPersona = groupSuggestionsByPersona(reviews);
+  if (suggestionsByPersona.length > 0) {
+    lines.push("---");
+    lines.push("## 💡 개선 제안\n");
 
     for (const {
       personaEmoji,
       personaName,
-      suggestion,
-      details,
-    } of allSuggestions) {
+      suggestions,
+    } of suggestionsByPersona) {
       lines.push(`<details>`);
       lines.push(
-        `<summary><strong>${personaEmoji} ${suggestion}</strong></summary>\n`,
+        `<summary><strong>${personaEmoji} ${personaName}</strong> (${suggestions.length}개 제안)</summary>\n`,
       );
-      lines.push(`> **제안자:** ${personaName}\n`);
-      if (details) {
-        lines.push(details);
+
+      for (let i = 0; i < suggestions.length; i++) {
+        lines.push(`${i + 1}. ${suggestions[i]}`);
       }
-      lines.push(`\n</details>\n`);
+
+      lines.push("\n</details>\n");
     }
   }
 
-  // 액션 아이템
+  // ========================================
+  // 액션 아이템 (체크리스트)
+  // ========================================
   if (options.includeActionItems) {
     const actionItems = extractActionItems(reviews);
     if (actionItems.length > 0) {
-      lines.push("### 📋 액션 아이템\n");
+      lines.push("---");
+      lines.push("## 📋 액션 아이템\n");
       for (const item of actionItems) {
         lines.push(`- [ ] ${item}`);
       }
@@ -107,33 +109,31 @@ export function generateComment(
   return lines.join("\n");
 }
 
-interface SuggestionItem {
+interface PersonaSuggestions {
   personaEmoji: string;
   personaName: string;
-  suggestion: string;
-  details?: string;
+  suggestions: string[];
 }
 
 /**
- * 모든 페르소나의 개선 제안 수집
+ * 페르소나별로 제안 그룹화
  */
-function collectSuggestions(reviews: ReviewResult[]): SuggestionItem[] {
-  const items: SuggestionItem[] = [];
+function groupSuggestionsByPersona(
+  reviews: ReviewResult[],
+): PersonaSuggestions[] {
+  const result: PersonaSuggestions[] = [];
 
   for (const review of reviews) {
     if (review.suggestions && review.suggestions.length > 0) {
-      for (const suggestion of review.suggestions) {
-        items.push({
-          personaEmoji: review.personaEmoji,
-          personaName: review.personaName,
-          suggestion,
-          details: review.details,
-        });
-      }
+      result.push({
+        personaEmoji: review.personaEmoji,
+        personaName: review.personaName,
+        suggestions: review.suggestions,
+      });
     }
   }
 
-  return items;
+  return result;
 }
 
 /**

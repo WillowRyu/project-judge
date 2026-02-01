@@ -49045,41 +49045,44 @@ function generateComment(reviews, votingSummary, options = { style: "detailed", 
         lines.push(`| ${review.personaEmoji} ${review.personaName} | ${emoji} | ${review.reason} |`);
     }
     lines.push("");
-    // 상세 리뷰 (detailed 모드) - 먼저 배치
+    // ========================================
+    // 상세 분석 섹션
+    // ========================================
     if (options.style === "detailed") {
-        lines.push("---\n");
-        lines.push("### 📝 상세 분석\n");
+        lines.push("---");
+        lines.push("## 📝 상세 분석\n");
         for (const review of reviews) {
-            lines.push(`<details>\n<summary>${review.personaEmoji} ${review.personaName} 상세 리뷰</summary>\n`);
-            lines.push(`#### ${(0, voter_1.getVoteEmoji)(review.vote)} ${review.vote.toUpperCase()}\n`);
-            lines.push(`**판정 이유:** ${review.reason}\n`);
+            lines.push(`<details>\n<summary><strong>${review.personaEmoji} ${review.personaName}</strong> (${(0, voter_1.getVoteEmoji)(review.vote)} ${review.vote})</summary>\n`);
             if (review.details) {
-                lines.push("**분석 내용:**\n");
                 lines.push(review.details);
-                lines.push("");
             }
-            lines.push("</details>\n");
+            lines.push("\n</details>\n");
         }
     }
-    // 개선 제안 섹션 (상세 분석 이후)
-    const allSuggestions = collectSuggestions(reviews);
-    if (allSuggestions.length > 0) {
-        lines.push("### 💡 개선 제안\n");
-        for (const { personaEmoji, personaName, suggestion, details, } of allSuggestions) {
+    // ========================================
+    // 개선 제안 섹션 (페르소나별 그룹화)
+    // ========================================
+    const suggestionsByPersona = groupSuggestionsByPersona(reviews);
+    if (suggestionsByPersona.length > 0) {
+        lines.push("---");
+        lines.push("## 💡 개선 제안\n");
+        for (const { personaEmoji, personaName, suggestions, } of suggestionsByPersona) {
             lines.push(`<details>`);
-            lines.push(`<summary><strong>${personaEmoji} ${suggestion}</strong></summary>\n`);
-            lines.push(`> **제안자:** ${personaName}\n`);
-            if (details) {
-                lines.push(details);
+            lines.push(`<summary><strong>${personaEmoji} ${personaName}</strong> (${suggestions.length}개 제안)</summary>\n`);
+            for (let i = 0; i < suggestions.length; i++) {
+                lines.push(`${i + 1}. ${suggestions[i]}`);
             }
-            lines.push(`\n</details>\n`);
+            lines.push("\n</details>\n");
         }
     }
-    // 액션 아이템
+    // ========================================
+    // 액션 아이템 (체크리스트)
+    // ========================================
     if (options.includeActionItems) {
         const actionItems = extractActionItems(reviews);
         if (actionItems.length > 0) {
-            lines.push("### 📋 액션 아이템\n");
+            lines.push("---");
+            lines.push("## 📋 액션 아이템\n");
             for (const item of actionItems) {
                 lines.push(`- [ ] ${item}`);
             }
@@ -49092,23 +49095,20 @@ function generateComment(reviews, votingSummary, options = { style: "detailed", 
     return lines.join("\n");
 }
 /**
- * 모든 페르소나의 개선 제안 수집
+ * 페르소나별로 제안 그룹화
  */
-function collectSuggestions(reviews) {
-    const items = [];
+function groupSuggestionsByPersona(reviews) {
+    const result = [];
     for (const review of reviews) {
         if (review.suggestions && review.suggestions.length > 0) {
-            for (const suggestion of review.suggestions) {
-                items.push({
-                    personaEmoji: review.personaEmoji,
-                    personaName: review.personaName,
-                    suggestion,
-                    details: review.details,
-                });
-            }
+            result.push({
+                personaEmoji: review.personaEmoji,
+                personaName: review.personaName,
+                suggestions: review.suggestions,
+            });
         }
     }
-    return items;
+    return result;
 }
 /**
  * 리뷰에서 액션 아이템 추출
@@ -49562,9 +49562,13 @@ exports.BALTHASAR_GUIDELINE = `# 👩‍👧 BALTHASAR - 어머니
   "vote": "approve" | "reject" | "conditional",
   "reason": "한 줄 요약 (30자 이내)",
   "details": "상세 분석 내용 (마크다운 형식)",
-  "suggestions": ["개선 제안 1", "개선 제안 2"]
+  "suggestions": ["[파일명:라인] 문제 → 해결방법"]
 }
 \`\`\`
+
+### suggestions 작성 예시
+❌ 나쁜 예: "함수명이 불명확합니다. handleData라는 이름은..."
+✅ 좋은 예: "[utils.ts:23] handleData → processUserInput으로 명확히 변경"
 
 ## 성격
 - 좋은 점도 먼저 언급 (격려)
@@ -49638,9 +49642,13 @@ exports.CASPER_GUIDELINE = `# 💃 CASPER - 여자/인간
   "vote": "approve" | "reject" | "conditional",
   "reason": "한 줄 요약 (30자 이내)",
   "details": "상세 분석 내용 (마크다운 형식)",
-  "suggestions": ["개선 제안 1", "개선 제안 2"]
+  "suggestions": ["[파일명:라인] 문제 → 해결방법"]
 }
 \`\`\`
+
+### suggestions 작성 예시
+❌ 나쁜 예: "로딩 상태 처리가 없습니다. 사용자가 데이터를 기다릴 때..."
+✅ 좋은 예: "[UserList.tsx:15] 로딩 UI 없음 → Skeleton 컴포넌트 추가"
 
 ## 성격
 - 사용자 관점에서 서술 ("사용자가 이 버튼을 눌렀을 때...")
@@ -49752,9 +49760,13 @@ exports.MELCHIOR_GUIDELINE = `# 🔬 MELCHIOR - 과학자
   "vote": "approve" | "reject" | "conditional",
   "reason": "한 줄 요약 (30자 이내)",
   "details": "상세 분석 내용 (마크다운 형식)",
-  "suggestions": ["개선 제안 1", "개선 제안 2"]
+  "suggestions": ["[파일명:라인] 문제 → 해결방법"]
 }
 \`\`\`
+
+### suggestions 작성 예시
+❌ 나쁜 예: "에러 핸들링이 부족합니다. 현재 코드에서는 에러가 발생할 경우..."
+✅ 좋은 예: "[api.ts:45] catch 블록 누락 → try-catch로 감싸고 에러 로깅 추가"
 
 ## 성격
 - 직접적이고 간결하게 표현

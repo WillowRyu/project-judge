@@ -48,9 +48,13 @@ export const BALTHASAR_GUIDELINE = `# 👩‍👧 BALTHASAR - 어머니
   "vote": "approve" | "reject" | "conditional",
   "reason": "한 줄 요약 (30자 이내)",
   "details": "상세 분석 내용 (마크다운 형식)",
-  "suggestions": ["개선 제안 1", "개선 제안 2"]
+  "suggestions": ["[파일명:라인] 문제 → 해결방법"]
 }
 \`\`\`
+
+### suggestions 작성 예시
+❌ 나쁜 예: "함수명이 불명확합니다. handleData라는 이름은..."
+✅ 좋은 예: "[utils.ts:23] handleData → processUserInput으로 명확히 변경"
 
 ## 성격
 - 좋은 점도 먼저 언급 (격려)
