@@ -49045,21 +49045,7 @@ function generateComment(reviews, votingSummary, options = { style: "detailed", 
         lines.push(`| ${review.personaEmoji} ${review.personaName} | ${emoji} | ${review.reason} |`);
     }
     lines.push("");
-    // 개선 제안 섹션 (상단에 배치)
-    const allSuggestions = collectSuggestions(reviews);
-    if (allSuggestions.length > 0) {
-        lines.push("### 💡 개선 제안\n");
-        for (const { personaEmoji, personaName, suggestion, details, } of allSuggestions) {
-            lines.push(`<details>`);
-            lines.push(`<summary><strong>${personaEmoji} ${suggestion}</strong></summary>\n`);
-            lines.push(`> **제안자:** ${personaName}\n`);
-            if (details) {
-                lines.push(details);
-            }
-            lines.push(`\n</details>\n`);
-        }
-    }
-    // 상세 리뷰 (detailed 모드)
+    // 상세 리뷰 (detailed 모드) - 먼저 배치
     if (options.style === "detailed") {
         lines.push("---\n");
         lines.push("### 📝 상세 분석\n");
@@ -49073,6 +49059,20 @@ function generateComment(reviews, votingSummary, options = { style: "detailed", 
                 lines.push("");
             }
             lines.push("</details>\n");
+        }
+    }
+    // 개선 제안 섹션 (상세 분석 이후)
+    const allSuggestions = collectSuggestions(reviews);
+    if (allSuggestions.length > 0) {
+        lines.push("### 💡 개선 제안\n");
+        for (const { personaEmoji, personaName, suggestion, details, } of allSuggestions) {
+            lines.push(`<details>`);
+            lines.push(`<summary><strong>${personaEmoji} ${suggestion}</strong></summary>\n`);
+            lines.push(`> **제안자:** ${personaName}\n`);
+            if (details) {
+                lines.push(details);
+            }
+            lines.push(`\n</details>\n`);
         }
     }
     // 액션 아이템
@@ -50110,7 +50110,19 @@ class GeminiProvider {
     async createContextCache(prContext, model) {
         try {
             console.log(`  Creating context cache for model: ${model}`);
-            const cacheResponse = await this.client.caches.create({
+            // gemini-3 계열은 global location 필요
+            const modelLocation = GeminiProvider.getLocationForModel(model);
+            let clientToUse = this.client;
+            if (this.config.mode === "gcp" &&
+                modelLocation !== this.config.gcpLocation) {
+                console.log(`  Using ${modelLocation} location for caching`);
+                clientToUse = new genai_1.GoogleGenAI({
+                    vertexai: true,
+                    project: this.config.gcpProjectId,
+                    location: modelLocation,
+                });
+            }
+            const cacheResponse = await clientToUse.caches.create({
                 model: model,
                 config: {
                     contents: [

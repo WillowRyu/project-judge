@@ -39,30 +39,7 @@ export function generateComment(
   }
   lines.push("");
 
-  // 개선 제안 섹션 (상단에 배치)
-  const allSuggestions = collectSuggestions(reviews);
-  if (allSuggestions.length > 0) {
-    lines.push("### 💡 개선 제안\n");
-
-    for (const {
-      personaEmoji,
-      personaName,
-      suggestion,
-      details,
-    } of allSuggestions) {
-      lines.push(`<details>`);
-      lines.push(
-        `<summary><strong>${personaEmoji} ${suggestion}</strong></summary>\n`,
-      );
-      lines.push(`> **제안자:** ${personaName}\n`);
-      if (details) {
-        lines.push(details);
-      }
-      lines.push(`\n</details>\n`);
-    }
-  }
-
-  // 상세 리뷰 (detailed 모드)
+  // 상세 리뷰 (detailed 모드) - 먼저 배치
   if (options.style === "detailed") {
     lines.push("---\n");
     lines.push("### 📝 상세 분석\n");
@@ -83,6 +60,29 @@ export function generateComment(
       }
 
       lines.push("</details>\n");
+    }
+  }
+
+  // 개선 제안 섹션 (상세 분석 이후)
+  const allSuggestions = collectSuggestions(reviews);
+  if (allSuggestions.length > 0) {
+    lines.push("### 💡 개선 제안\n");
+
+    for (const {
+      personaEmoji,
+      personaName,
+      suggestion,
+      details,
+    } of allSuggestions) {
+      lines.push(`<details>`);
+      lines.push(
+        `<summary><strong>${personaEmoji} ${suggestion}</strong></summary>\n`,
+      );
+      lines.push(`> **제안자:** ${personaName}\n`);
+      if (details) {
+        lines.push(details);
+      }
+      lines.push(`\n</details>\n`);
     }
   }
 
