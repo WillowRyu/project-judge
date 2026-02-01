@@ -128,9 +128,13 @@ async function run(): Promise<void> {
       headBranch: prInfo.headBranch,
     };
 
-    // 12. 리뷰 실행
+    // 12. 리뷰 실행 (토큰 최적화 옵션 적용)
     console.log("🔍 Running reviews...\n");
-    const reviews = await runReviews(provider, personas, prContext);
+    const reviews = await runReviews(provider, personas, prContext, {
+      enableCaching: config.optimization?.context_caching ?? true,
+      enableCompression: config.optimization?.prompt_compression ?? true,
+      tieredModels: config.optimization?.tiered_models,
+    });
 
     // 13. 투표 집계
     const votingSummary = countVotesWithConfig(reviews, {

@@ -6,6 +6,7 @@ import { LLMProvider } from "./provider.interface";
  * @google/genai SDK 사용 (API Key 및 Vertex AI 모두 지원)
  * - API Key 모드: Gemini Developer API 사용
  * - GCP 모드: Vertex AI API 사용
+ * - Context Caching 지원: 동일 PR 컨텍스트 재사용
  */
 
 interface GeminiConfig {
@@ -16,10 +17,17 @@ interface GeminiConfig {
   model?: string;
 }
 
+interface CachedContext {
+  cacheId: string;
+  model: string;
+  createdAt: Date;
+}
+
 export class GeminiProvider implements LLMProvider {
   readonly name = "gemini";
   private config: GeminiConfig;
   private client: GoogleGenAI;
+  private cachedContext?: CachedContext;
 
   /**
    * 모델에 따라 적절한 location 반환
@@ -146,5 +154,112 @@ export class GeminiProvider implements LLMProvider {
    */
   getDefaultModel(): string {
     return this.config.model!;
+  }
+
+  /**
+   * 현재 인증 모드 반환
+   */
+  getMode(): "api-key" | "gcp" {
+    return this.config.mode;
+  }
+
+  /**
+   * Context Cache 생성
+   * PR 컨텍스트를 캐시하여 여러 페르소나가 재사용
+   * @param prContext - 캐시할 PR 컨텍스트 (diff, 설명 등)
+   * @param model - 캐시에 사용할 모델
+   * @returns 캐시 ID
+   */
+  async createContextCache(prContext: string, model: string): Promise<string> {
+    try {
+      console.log(`  Creating context cache for model: ${model}`);
+
+      const cacheResponse = await this.client.caches.create({
+        model: model,
+        config: {
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prContext }],
+            },
+          ],
+          displayName: `magi-pr-review-${Date.now()}`,
+          ttl: "3600s", // 1시간 TTL
+        },
+      });
+
+      const cacheId = cacheResponse.name ?? "";
+      this.cachedContext = {
+        cacheId,
+        model,
+        createdAt: new Date(),
+      };
+
+      console.log(`  Context cache created: ${cacheId}`);
+      return cacheId;
+    } catch (error) {
+      console.warn(
+        "  Context caching not available, using direct calls:",
+        error,
+      );
+      return "";
+    }
+  }
+
+  /**
+   * 캐시된 컨텍스트로 리뷰 수행
+   */
+  async reviewWithCache(
+    cacheId: string,
+    personaPrompt: string,
+    model: string,
+  ): Promise<string> {
+    if (!cacheId) {
+      // 캐시 없으면 일반 호출
+      return this.reviewWithModel(personaPrompt, model);
+    }
+
+    try {
+      console.log(`  Using cached context: ${cacheId.slice(-20)}`);
+
+      const response = await this.client.models.generateContent({
+        model: model,
+        contents: personaPrompt,
+        config: {
+          temperature: 0.7,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 8192,
+          cachedContent: cacheId,
+        },
+      });
+
+      return response.text ?? "";
+    } catch (error) {
+      console.warn("  Cache usage failed, falling back to direct call:", error);
+      return this.reviewWithModel(personaPrompt, model);
+    }
+  }
+
+  /**
+   * 캐시 정리
+   */
+  async clearCache(): Promise<void> {
+    if (this.cachedContext?.cacheId) {
+      try {
+        await this.client.caches.delete({ name: this.cachedContext.cacheId });
+        console.log("  Context cache cleared");
+      } catch {
+        // 삭제 실패해도 무시 (TTL로 자동 삭제됨)
+      }
+      this.cachedContext = undefined;
+    }
+  }
+
+  /**
+   * 캐시 정보 반환
+   */
+  getCachedContext(): CachedContext | undefined {
+    return this.cachedContext;
   }
 }

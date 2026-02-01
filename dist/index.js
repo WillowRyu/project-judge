@@ -48804,7 +48804,7 @@ function getDefaultConfig() {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.MagiConfigSchema = exports.OutputConfigSchema = exports.VotingConfigSchema = exports.ProviderConfigSchema = exports.PersonaConfigSchema = void 0;
+exports.MagiConfigSchema = exports.OptimizationConfigSchema = exports.TieredModelsConfigSchema = exports.OutputConfigSchema = exports.VotingConfigSchema = exports.ProviderConfigSchema = exports.PersonaConfigSchema = void 0;
 const zod_1 = __nccwpck_require__(6827);
 /**
  * MAGI Configuration Schema
@@ -48844,12 +48844,23 @@ exports.OutputConfigSchema = zod_1.z.object({
         .optional()
         .default({}),
 });
+exports.TieredModelsConfigSchema = zod_1.z.object({
+    small: zod_1.z.string().optional(), // 1-10줄 (기본: gemini-2.5-flash-lite)
+    medium: zod_1.z.string().optional(), // 11-100줄 (기본: GCP=gemini-3-flash, API=gemini-2.5-flash)
+    large: zod_1.z.string().optional(), // 100줄+ (기본: GCP=gemini-3-pro-preview, API=gemini-2.5-pro)
+});
+exports.OptimizationConfigSchema = zod_1.z.object({
+    tiered_models: exports.TieredModelsConfigSchema.optional(),
+    context_caching: zod_1.z.boolean().optional().default(true),
+    prompt_compression: zod_1.z.boolean().optional().default(true),
+});
 exports.MagiConfigSchema = zod_1.z.object({
     version: zod_1.z.number().default(1),
     provider: exports.ProviderConfigSchema.optional().default({}),
     voting: exports.VotingConfigSchema.optional().default({}),
     personas: zod_1.z.array(exports.PersonaConfigSchema).optional(),
     output: exports.OutputConfigSchema.optional().default({}),
+    optimization: exports.OptimizationConfigSchema.optional().default({}),
     ignore: zod_1.z
         .object({
         files: zod_1.z.array(zod_1.z.string()).optional(),
@@ -49383,9 +49394,13 @@ async function run() {
             baseBranch: prInfo.baseBranch,
             headBranch: prInfo.headBranch,
         };
-        // 12. 리뷰 실행
+        // 12. 리뷰 실행 (토큰 최적화 옵션 적용)
         console.log("🔍 Running reviews...\n");
-        const reviews = await (0, review_1.runReviews)(provider, personas, prContext);
+        const reviews = await (0, review_1.runReviews)(provider, personas, prContext, {
+            enableCaching: config.optimization?.context_caching ?? true,
+            enableCompression: config.optimization?.prompt_compression ?? true,
+            tieredModels: config.optimization?.tiered_models,
+        });
         // 13. 투표 집계
         const votingSummary = (0, review_1.countVotesWithConfig)(reviews, {
             requiredApprovals: config.voting?.required_approvals || 2,
@@ -49919,6 +49934,7 @@ class GeminiProvider {
     name = "gemini";
     config;
     client;
+    cachedContext;
     /**
      * 모델에 따라 적절한 location 반환
      * gemini-3 계열: 'global' 필수 (프리뷰 모델 제한)
@@ -50026,6 +50042,98 @@ class GeminiProvider {
     getDefaultModel() {
         return this.config.model;
     }
+    /**
+     * 현재 인증 모드 반환
+     */
+    getMode() {
+        return this.config.mode;
+    }
+    /**
+     * Context Cache 생성
+     * PR 컨텍스트를 캐시하여 여러 페르소나가 재사용
+     * @param prContext - 캐시할 PR 컨텍스트 (diff, 설명 등)
+     * @param model - 캐시에 사용할 모델
+     * @returns 캐시 ID
+     */
+    async createContextCache(prContext, model) {
+        try {
+            console.log(`  Creating context cache for model: ${model}`);
+            const cacheResponse = await this.client.caches.create({
+                model: model,
+                config: {
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [{ text: prContext }],
+                        },
+                    ],
+                    displayName: `magi-pr-review-${Date.now()}`,
+                    ttl: "3600s", // 1시간 TTL
+                },
+            });
+            const cacheId = cacheResponse.name ?? "";
+            this.cachedContext = {
+                cacheId,
+                model,
+                createdAt: new Date(),
+            };
+            console.log(`  Context cache created: ${cacheId}`);
+            return cacheId;
+        }
+        catch (error) {
+            console.warn("  Context caching not available, using direct calls:", error);
+            return "";
+        }
+    }
+    /**
+     * 캐시된 컨텍스트로 리뷰 수행
+     */
+    async reviewWithCache(cacheId, personaPrompt, model) {
+        if (!cacheId) {
+            // 캐시 없으면 일반 호출
+            return this.reviewWithModel(personaPrompt, model);
+        }
+        try {
+            console.log(`  Using cached context: ${cacheId.slice(-20)}`);
+            const response = await this.client.models.generateContent({
+                model: model,
+                contents: personaPrompt,
+                config: {
+                    temperature: 0.7,
+                    topP: 0.95,
+                    topK: 40,
+                    maxOutputTokens: 8192,
+                    cachedContent: cacheId,
+                },
+            });
+            return response.text ?? "";
+        }
+        catch (error) {
+            console.warn("  Cache usage failed, falling back to direct call:", error);
+            return this.reviewWithModel(personaPrompt, model);
+        }
+    }
+    /**
+     * 캐시 정리
+     */
+    async clearCache() {
+        if (this.cachedContext?.cacheId) {
+            try {
+                await this.client.caches.delete({ name: this.cachedContext.cacheId });
+                console.log("  Context cache cleared");
+            }
+            catch {
+                // 삭제 실패해도 무시 (TTL로 자동 삭제됨)
+            }
+            this.cachedContext = undefined;
+        }
+    }
+    /**
+     * 캐시 정보 반환
+     */
+    getCachedContext() {
+        return this.cachedContext;
+    }
 }
 exports.GeminiProvider = GeminiProvider;
 
@@ -50059,6 +50167,10 @@ Object.defineProperty(exports, "createProvider", ({ enumerable: true, get: funct
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.analyzeDiff = analyzeDiff;
 exports.filterIgnoredFiles = filterIgnoredFiles;
+exports.estimateTokenCount = estimateTokenCount;
+exports.needsCompression = needsCompression;
+exports.getTotalChangedLines = getTotalChangedLines;
+exports.smartCompressDiff = smartCompressDiff;
 /**
  * PR Diff를 분석 가능한 형태로 변환
  */
@@ -50133,6 +50245,74 @@ function matchGlobPattern(filename, pattern) {
     // 정확한 매칭
     return filename === pattern || filename.includes(pattern);
 }
+/**
+ * 토큰 수 추정 (대략 문자 수 / 4)
+ */
+function estimateTokenCount(text) {
+    return Math.ceil(text.length / 4);
+}
+/**
+ * 압축 필요 여부 판단
+ * - 총 토큰 10,000개 초과 OR
+ * - 단일 파일 300줄 이상
+ */
+function needsCompression(analyzedDiff) {
+    const totalTokens = estimateTokenCount(analyzedDiff.compressedDiff);
+    const hasLargeFile = analyzedDiff.files.some((f) => f.additions + f.deletions > 300);
+    return totalTokens > 10000 || hasLargeFile;
+}
+/**
+ * 총 변경된 줄 수 계산 (계층적 리뷰용)
+ */
+function getTotalChangedLines(analyzedDiff) {
+    return analyzedDiff.totalAdditions + analyzedDiff.totalDeletions;
+}
+/**
+ * 스마트 압축 - 대형 PR용
+ * 변경된 함수/클래스 위주로 컨텍스트 축소
+ */
+function smartCompressDiff(files, maxTokensPerFile = 2500) {
+    const chunks = [];
+    for (const file of files) {
+        if (!file.patch)
+            continue;
+        chunks.push(`\n### ${file.filename}\n`);
+        // 토큰 제한 적용
+        const estimatedTokens = estimateTokenCount(file.patch);
+        if (estimatedTokens > maxTokensPerFile) {
+            // 변경된 라인만 추출 + 앞뒤 5줄 컨텍스트
+            const lines = file.patch.split("\n");
+            const compressedLines = [];
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                if (line.startsWith("+") ||
+                    line.startsWith("-") ||
+                    line.startsWith("@@")) {
+                    // 변경 라인 + 앞뒤 5줄
+                    const start = Math.max(0, i - 5);
+                    const end = Math.min(lines.length, i + 6);
+                    for (let j = start; j < end; j++) {
+                        if (!compressedLines.includes(lines[j])) {
+                            compressedLines.push(lines[j]);
+                        }
+                    }
+                }
+            }
+            chunks.push(compressedLines.join("\n"));
+            chunks.push(`\n[... ${estimatedTokens - maxTokensPerFile} tokens truncated ...]`);
+        }
+        else {
+            // 기존 압축 방식
+            const relevantLines = file.patch
+                .split("\n")
+                .filter((line) => line.startsWith("+") ||
+                line.startsWith("-") ||
+                line.startsWith("@@"));
+            chunks.push(relevantLines.join("\n"));
+        }
+    }
+    return chunks.join("\n");
+}
 
 
 /***/ }),
@@ -50159,52 +50339,24 @@ Object.defineProperty(exports, "runReviews", ({ enumerable: true, get: function 
 /***/ }),
 
 /***/ 5495:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.runReviews = runReviews;
+const gemini_provider_1 = __nccwpck_require__(4497);
+const diff_analyzer_1 = __nccwpck_require__(6919);
+const tiered_model_selector_1 = __nccwpck_require__(2053);
 /**
- * 단일 페르소나로 리뷰 수행
+ * PR 컨텍스트를 문자열로 변환 (캐싱용)
  */
-async function reviewWithPersona(provider, persona, context) {
-    const prompt = buildPrompt(persona, context);
-    try {
-        let response;
-        // 페르소나별 모델이 지정된 경우 reviewWithModel 사용
-        if (persona.model && provider.reviewWithModel) {
-            console.log(`    Using model: ${persona.model}`);
-            response = await provider.reviewWithModel(prompt, persona.model);
-        }
-        else {
-            response = await provider.review(prompt);
-        }
-        return parseReviewResponse(persona, response);
-    }
-    catch (error) {
-        console.error(`Error reviewing with ${persona.name}:`, error);
-        // 에러 발생 시 기본 응답
-        return {
-            personaId: persona.id,
-            personaName: persona.name,
-            personaEmoji: persona.emoji,
-            vote: "conditional",
-            reason: "리뷰 실행 중 오류 발생",
-            details: `리뷰를 수행하는 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`,
-            suggestions: [],
-        };
-    }
-}
-/**
- * 프롬프트 생성
- */
-function buildPrompt(persona, context) {
-    return `${persona.guideline}
-
----
-
-## 리뷰 대상 Pull Request
+function buildPRContextString(context, useCompression) {
+    // 대형 PR이고 압축 필요 시 smartCompressDiff 사용
+    const diffContent = useCompression && (0, diff_analyzer_1.needsCompression)(context.diff)
+        ? (0, diff_analyzer_1.smartCompressDiff)(context.diff.files)
+        : context.diff.compressedDiff;
+    return `## 리뷰 대상 Pull Request
 
 **제목**: ${context.title}
 **작성자**: ${context.author}
@@ -50220,24 +50372,85 @@ ${context.diff.summary}
 
 ### 변경 내용 (Diff)
 \`\`\`diff
-${context.diff.compressedDiff}
-\`\`\`
+${diffContent}
+\`\`\``;
+}
+/**
+ * 페르소나 전용 프롬프트 생성 (캐시 사용 시)
+ */
+function buildPersonaPrompt(persona) {
+    return `${persona.guideline}
+
+---
+
+위 PR 컨텍스트를 바탕으로 이 PR을 리뷰해주세요.
+반드시 지정된 JSON 형식으로만 응답해주세요.`;
+}
+/**
+ * 전체 프롬프트 생성 (캐시 미사용 시)
+ */
+function buildFullPrompt(persona, context, useCompression) {
+    const prContext = buildPRContextString(context, useCompression);
+    return `${persona.guideline}
+
+---
+
+${prContext}
 
 ---
 
 위 지침에 따라 이 PR을 리뷰해주세요.
-반드시 지정된 JSON 형식으로만 응답해주세요.
-`;
+반드시 지정된 JSON 형식으로만 응답해주세요.`;
+}
+/**
+ * 단일 페르소나로 리뷰 수행 (캐시 지원)
+ */
+async function reviewWithPersona(provider, persona, context, model, cacheId, useCompression = false) {
+    try {
+        let response;
+        // 캐시 사용 가능하고 GeminiProvider인 경우
+        if (cacheId && provider instanceof gemini_provider_1.GeminiProvider) {
+            const personaPrompt = buildPersonaPrompt(persona);
+            response = await provider.reviewWithCache(cacheId, personaPrompt, model);
+        }
+        // 페르소나별 모델 지정 시
+        else if (persona.model && provider.reviewWithModel) {
+            console.log(`    Using persona model: ${persona.model}`);
+            const fullPrompt = buildFullPrompt(persona, context, useCompression);
+            response = await provider.reviewWithModel(fullPrompt, persona.model);
+        }
+        // 계층적 모델 사용
+        else if (provider.reviewWithModel) {
+            const fullPrompt = buildFullPrompt(persona, context, useCompression);
+            response = await provider.reviewWithModel(fullPrompt, model);
+        }
+        // 기본 모델 사용
+        else {
+            const fullPrompt = buildFullPrompt(persona, context, useCompression);
+            response = await provider.review(fullPrompt);
+        }
+        return parseReviewResponse(persona, response);
+    }
+    catch (error) {
+        console.error(`Error reviewing with ${persona.name}:`, error);
+        return {
+            personaId: persona.id,
+            personaName: persona.name,
+            personaEmoji: persona.emoji,
+            vote: "conditional",
+            reason: "리뷰 실행 중 오류 발생",
+            details: `리뷰를 수행하는 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`,
+            suggestions: [],
+        };
+    }
 }
 /**
  * LLM 응답 파싱
  */
 function parseReviewResponse(persona, response) {
     try {
-        // JSON 블록 추출
         const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
         const jsonStr = jsonMatch ? jsonMatch[1] : response;
-        // JSON 파싱 시도
         const parsed = JSON.parse(jsonStr.trim());
         return {
             personaId: persona.id,
@@ -50250,7 +50463,6 @@ function parseReviewResponse(persona, response) {
         };
     }
     catch {
-        // 파싱 실패 시 텍스트에서 추론
         const vote = inferVoteFromText(response);
         return {
             personaId: persona.id,
@@ -50258,23 +50470,17 @@ function parseReviewResponse(persona, response) {
             personaEmoji: persona.emoji,
             vote,
             reason: "응답 파싱 실패",
-            details: response.slice(0, 1000), // 처음 1000자만
+            details: response.slice(0, 1000),
             suggestions: [],
         };
     }
 }
-/**
- * 투표 값 검증
- */
 function validateVote(vote) {
     if (vote === "approve" || vote === "reject" || vote === "conditional") {
         return vote;
     }
     return "conditional";
 }
-/**
- * 텍스트에서 투표 추론
- */
 function inferVoteFromText(text) {
     const lowerText = text.toLowerCase();
     if (lowerText.includes("approve") || lowerText.includes("승인")) {
@@ -50286,16 +50492,122 @@ function inferVoteFromText(text) {
     return "conditional";
 }
 /**
- * 모든 페르소나로 병렬 리뷰 수행
+ * 모든 페르소나로 병렬 리뷰 수행 (최적화 적용)
  */
-async function runReviews(provider, personas, context) {
-    console.log(`Starting parallel reviews with ${personas.length} personas...`);
+async function runReviews(provider, personas, context, options = {}) {
+    const { enableCaching = true, enableCompression = true, tieredModels, } = options;
+    // 1. Diff 크기 분석 및 모델 선택
+    const changedLines = (0, diff_analyzer_1.getTotalChangedLines)(context.diff);
+    const isGemini = provider instanceof gemini_provider_1.GeminiProvider;
+    const mode = isGemini ? provider.getMode() : "api-key";
+    const modelTier = (0, tiered_model_selector_1.selectModelForDiff)(changedLines, mode, tieredModels);
+    console.log(`\n📊 Token Optimization Analysis:`);
+    console.log(`   Total changes: ${changedLines} lines`);
+    console.log(`   Tier: ${(0, tiered_model_selector_1.formatTierInfo)(modelTier)}`);
+    // 2. 압축 필요 여부 확인
+    const useCompression = enableCompression && modelTier.useCompression;
+    if (useCompression) {
+        console.log(`   Compression: enabled (large PR detected)`);
+    }
+    // 3. Context Caching 시도 (GeminiProvider + 캐싱 활성화 시)
+    let cacheId;
+    if (enableCaching && isGemini && personas.length > 1) {
+        try {
+            const prContextString = buildPRContextString(context, useCompression);
+            cacheId = await provider.createContextCache(prContextString, modelTier.model);
+            if (cacheId) {
+                console.log(`   Context Cache: created (3 personas will reuse)`);
+            }
+        }
+        catch (error) {
+            console.log(`   Context Cache: not available (${error})`);
+        }
+    }
+    // 4. 병렬 리뷰 실행
+    console.log(`\nStarting parallel reviews with ${personas.length} personas...`);
     const reviews = await Promise.all(personas.map((persona) => {
-        console.log(`  - ${persona.emoji} ${persona.name} reviewing...`);
-        return reviewWithPersona(provider, persona, context);
+        console.log(`  - ${persona.emoji} ${persona.name} reviewing with ${modelTier.model}...`);
+        return reviewWithPersona(provider, persona, context, modelTier.model, cacheId, useCompression);
     }));
+    // 5. 캐시 정리
+    if (cacheId && isGemini) {
+        await provider.clearCache();
+    }
     console.log("All reviews completed.");
     return reviews;
+}
+
+
+/***/ }),
+
+/***/ 2053:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+/**
+ * Tiered Model Selector
+ * Diff 크기에 따른 적절한 모델 자동 선택
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.determineTier = determineTier;
+exports.selectModelForDiff = selectModelForDiff;
+exports.formatTierInfo = formatTierInfo;
+// 기본 모델 설정
+const DEFAULT_MODELS = {
+    gcp: {
+        small: "gemini-2.5-flash-lite",
+        medium: "gemini-3-flash",
+        large: "gemini-3-pro-preview",
+    },
+    "api-key": {
+        small: "gemini-2.5-flash-lite",
+        medium: "gemini-2.5-flash",
+        large: "gemini-2.5-pro",
+    },
+};
+// 줄 수 기준 (고정값)
+const TIER_THRESHOLDS = {
+    small: { min: 0, max: 10 },
+    medium: { min: 11, max: 100 },
+    large: { min: 101, max: Infinity },
+};
+/**
+ * Diff 크기를 기반으로 tier 결정
+ */
+function determineTier(totalChangedLines) {
+    if (totalChangedLines <= TIER_THRESHOLDS.small.max) {
+        return "small";
+    }
+    if (totalChangedLines <= TIER_THRESHOLDS.medium.max) {
+        return "medium";
+    }
+    return "large";
+}
+/**
+ * Diff 크기와 모드에 따른 모델 선택
+ */
+function selectModelForDiff(totalChangedLines, mode, customConfig) {
+    const tier = determineTier(totalChangedLines);
+    const defaults = DEFAULT_MODELS[mode];
+    // 사용자 설정 우선, 없으면 기본값
+    const model = customConfig?.[tier] ?? defaults[tier];
+    return {
+        model,
+        tier,
+        useCompression: tier === "large",
+    };
+}
+/**
+ * 모델 계층 정보 로깅용 문자열
+ */
+function formatTierInfo(modelTier) {
+    const tierLabels = {
+        small: "소형 (1-10줄)",
+        medium: "중형 (11-100줄)",
+        large: "대형 (100줄+)",
+    };
+    return `${tierLabels[modelTier.tier]} → ${modelTier.model}${modelTier.useCompression ? " (압축 적용)" : ""}`;
 }
 
 

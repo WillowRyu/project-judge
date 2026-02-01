@@ -93,6 +93,52 @@ export declare const OutputConfigSchema: z.ZodObject<{
         rejected?: string | undefined;
     } | undefined;
 }>;
+export declare const TieredModelsConfigSchema: z.ZodObject<{
+    small: z.ZodOptional<z.ZodString>;
+    medium: z.ZodOptional<z.ZodString>;
+    large: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    small?: string | undefined;
+    medium?: string | undefined;
+    large?: string | undefined;
+}, {
+    small?: string | undefined;
+    medium?: string | undefined;
+    large?: string | undefined;
+}>;
+export declare const OptimizationConfigSchema: z.ZodObject<{
+    tiered_models: z.ZodOptional<z.ZodObject<{
+        small: z.ZodOptional<z.ZodString>;
+        medium: z.ZodOptional<z.ZodString>;
+        large: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        small?: string | undefined;
+        medium?: string | undefined;
+        large?: string | undefined;
+    }, {
+        small?: string | undefined;
+        medium?: string | undefined;
+        large?: string | undefined;
+    }>>;
+    context_caching: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
+    prompt_compression: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
+}, "strip", z.ZodTypeAny, {
+    context_caching: boolean;
+    prompt_compression: boolean;
+    tiered_models?: {
+        small?: string | undefined;
+        medium?: string | undefined;
+        large?: string | undefined;
+    } | undefined;
+}, {
+    tiered_models?: {
+        small?: string | undefined;
+        medium?: string | undefined;
+        large?: string | undefined;
+    } | undefined;
+    context_caching?: boolean | undefined;
+    prompt_compression?: boolean | undefined;
+}>;
 export declare const MagiConfigSchema: z.ZodObject<{
     version: z.ZodDefault<z.ZodNumber>;
     provider: z.ZodDefault<z.ZodOptional<z.ZodObject<{
@@ -185,6 +231,39 @@ export declare const MagiConfigSchema: z.ZodObject<{
             rejected?: string | undefined;
         } | undefined;
     }>>>;
+    optimization: z.ZodDefault<z.ZodOptional<z.ZodObject<{
+        tiered_models: z.ZodOptional<z.ZodObject<{
+            small: z.ZodOptional<z.ZodString>;
+            medium: z.ZodOptional<z.ZodString>;
+            large: z.ZodOptional<z.ZodString>;
+        }, "strip", z.ZodTypeAny, {
+            small?: string | undefined;
+            medium?: string | undefined;
+            large?: string | undefined;
+        }, {
+            small?: string | undefined;
+            medium?: string | undefined;
+            large?: string | undefined;
+        }>>;
+        context_caching: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
+        prompt_compression: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
+    }, "strip", z.ZodTypeAny, {
+        context_caching: boolean;
+        prompt_compression: boolean;
+        tiered_models?: {
+            small?: string | undefined;
+            medium?: string | undefined;
+            large?: string | undefined;
+        } | undefined;
+    }, {
+        tiered_models?: {
+            small?: string | undefined;
+            medium?: string | undefined;
+            large?: string | undefined;
+        } | undefined;
+        context_caching?: boolean | undefined;
+        prompt_compression?: boolean | undefined;
+    }>>>;
     ignore: z.ZodOptional<z.ZodObject<{
         files: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         paths: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
@@ -215,6 +294,15 @@ export declare const MagiConfigSchema: z.ZodObject<{
             approved: string;
             rejected: string;
         };
+    };
+    optimization: {
+        context_caching: boolean;
+        prompt_compression: boolean;
+        tiered_models?: {
+            small?: string | undefined;
+            medium?: string | undefined;
+            large?: string | undefined;
+        } | undefined;
     };
     personas?: {
         id: string;
@@ -258,6 +346,15 @@ export declare const MagiConfigSchema: z.ZodObject<{
             approved?: string | undefined;
             rejected?: string | undefined;
         } | undefined;
+    } | undefined;
+    optimization?: {
+        tiered_models?: {
+            small?: string | undefined;
+            medium?: string | undefined;
+            large?: string | undefined;
+        } | undefined;
+        context_caching?: boolean | undefined;
+        prompt_compression?: boolean | undefined;
     } | undefined;
     ignore?: {
         files?: string[] | undefined;

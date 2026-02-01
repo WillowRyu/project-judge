@@ -43,12 +43,25 @@ export const OutputConfigSchema = z.object({
     .default({}),
 });
 
+export const TieredModelsConfigSchema = z.object({
+  small: z.string().optional(), // 1-10줄 (기본: gemini-2.5-flash-lite)
+  medium: z.string().optional(), // 11-100줄 (기본: GCP=gemini-3-flash, API=gemini-2.5-flash)
+  large: z.string().optional(), // 100줄+ (기본: GCP=gemini-3-pro-preview, API=gemini-2.5-pro)
+});
+
+export const OptimizationConfigSchema = z.object({
+  tiered_models: TieredModelsConfigSchema.optional(),
+  context_caching: z.boolean().optional().default(true),
+  prompt_compression: z.boolean().optional().default(true),
+});
+
 export const MagiConfigSchema = z.object({
   version: z.number().default(1),
   provider: ProviderConfigSchema.optional().default({}),
   voting: VotingConfigSchema.optional().default({}),
   personas: z.array(PersonaConfigSchema).optional(),
   output: OutputConfigSchema.optional().default({}),
+  optimization: OptimizationConfigSchema.optional().default({}),
   ignore: z
     .object({
       files: z.array(z.string()).optional(),
