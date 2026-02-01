@@ -48766,6 +48766,20 @@ const DEFAULT_CONFIG_PATHS = [
     ".magi.yml",
     ".magi.yaml",
 ];
+// 기본 무시 패턴 - 빌드 결과물 및 의존성
+const DEFAULT_IGNORE_PATTERNS = [
+    "dist/**",
+    "build/**",
+    "node_modules/**",
+    "*.lock",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "*.min.js",
+    "*.min.css",
+    "*.d.ts.map",
+    "*.js.map",
+];
 async function loadConfig(workspacePath, configPath) {
     let configFile = null;
     if (configPath) {
@@ -48786,10 +48800,21 @@ async function loadConfig(workspacePath, configPath) {
     if (configFile) {
         const content = fs.readFileSync(configFile, "utf-8");
         const parsed = yaml.parse(content);
-        return schema_1.MagiConfigSchema.parse(parsed);
+        const config = schema_1.MagiConfigSchema.parse(parsed);
+        // 기본 무시 패턴과 사용자 설정 병합
+        config.ignore = {
+            files: [...DEFAULT_IGNORE_PATTERNS, ...(config.ignore?.files || [])],
+            paths: config.ignore?.paths || [],
+        };
+        return config;
     }
-    // 설정 파일이 없으면 기본값 사용
-    return schema_1.MagiConfigSchema.parse({});
+    // 설정 파일이 없으면 기본값 + 기본 무시 패턴 사용
+    const defaultConfig = schema_1.MagiConfigSchema.parse({});
+    defaultConfig.ignore = {
+        files: DEFAULT_IGNORE_PATTERNS,
+        paths: [],
+    };
+    return defaultConfig;
 }
 function getDefaultConfig() {
     return schema_1.MagiConfigSchema.parse({});
