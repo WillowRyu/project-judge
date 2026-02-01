@@ -1,0 +1,26 @@
+name: "MAGI Review"
+description: "Multi-persona AI code review system inspired by Evangelion MAGI"
+author: ""
+
+branding:
+  icon: "eye"
+  color: "purple"
+
+inputs:
+  gemini_api_key:
+    description: "Gemini API Key for authentication"
+    required: true
+  config_path:
+    description: "Path to magi.yml configuration file"
+    required: false
+    default: ".github/magi.yml"
+
+outputs:
+  result:
+    description: "Review result (approved/rejected)"
+  votes:
+    description: "JSON string of individual persona votes"
+
+runs:
+  using: "node20"
+  main: "dist/index.js"
