@@ -9,7 +9,8 @@ export interface LLMProvider {
 export interface ProviderConfig {
     type: "gemini" | "openai" | "claude";
     apiKey?: string;
-    gcpCredentials?: string;
+    gcpProjectId?: string;
+    gcpLocation?: string;
     model?: string;
 }
 //# sourceMappingURL=provider.interface.d.ts.map

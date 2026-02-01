@@ -10,6 +10,8 @@ export interface LLMProvider {
 export interface ProviderConfig {
   type: "gemini" | "openai" | "claude";
   apiKey?: string;
-  gcpCredentials?: string;
+  // GCP Vertex AI 인증용
+  gcpProjectId?: string;
+  gcpLocation?: string;
   model?: string;
 }

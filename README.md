@@ -15,15 +15,41 @@
 
 ## 🚀 빠른 시작
 
-### 1. GitHub Secrets 설정
+### Option 1: API Key (개인/테스트용)
 
-Repository Settings > Secrets and variables > Actions에서:
+1. [Google AI Studio](https://aistudio.google.com/apikey)에서 API 키 발급
+2. GitHub Secrets에 `GEMINI_API_KEY` 등록
 
-- `GEMINI_API_KEY`: Google Gemini API 키
+```yaml
+- uses: your-org/magi-review@v1
+  with:
+    gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
 
-### 2. Workflow 파일 추가
+### Option 2: GCP Vertex AI (엔터프라이즈용)
 
-`.github/workflows/magi-review.yml` 생성:
+1. GCP 프로젝트에서 Vertex AI API 활성화
+2. Service Account 생성 및 권한 부여 (`Vertex AI User`)
+3. GitHub Secrets에 Service Account JSON 등록
+
+```yaml
+- uses: google-github-actions/auth@v2
+  with:
+    credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+- uses: your-org/magi-review@v1
+  with:
+    gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
+    gcp_location: us-central1 # optional, default: us-central1
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### Workflow 예제
+
+`.github/workflows/magi-review.yml`:
 
 ```yaml
 name: MAGI Review

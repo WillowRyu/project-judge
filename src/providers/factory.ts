@@ -8,10 +8,21 @@ import { GeminiProvider } from "./gemini.provider";
 export function createProvider(config: ProviderConfig): LLMProvider {
   switch (config.type) {
     case "gemini":
-      if (!config.apiKey) {
-        throw new Error("Gemini API key is required");
+      // GCP 모드 우선 체크 (projectId가 있으면 GCP 모드)
+      if (config.gcpProjectId) {
+        return GeminiProvider.fromGCP(
+          config.gcpProjectId,
+          config.gcpLocation,
+          config.model,
+        );
       }
-      return new GeminiProvider(config.apiKey, config.model);
+      // API Key 모드
+      if (config.apiKey) {
+        return GeminiProvider.fromApiKey(config.apiKey, config.model);
+      }
+      throw new Error(
+        "Gemini requires either API key (gemini_api_key) or GCP credentials (gcp_project_id)",
+      );
 
     case "openai":
       throw new Error(
