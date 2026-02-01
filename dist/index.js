@@ -49045,23 +49045,31 @@ function generateComment(reviews, votingSummary, options = { style: "detailed", 
         lines.push(`| ${review.personaEmoji} ${review.personaName} | ${emoji} | ${review.reason} |`);
     }
     lines.push("");
+    // 개선 제안 섹션 (상단에 배치)
+    const allSuggestions = collectSuggestions(reviews);
+    if (allSuggestions.length > 0) {
+        lines.push("### 💡 개선 제안\n");
+        for (const { personaEmoji, personaName, suggestion, details, } of allSuggestions) {
+            lines.push(`<details>`);
+            lines.push(`<summary><strong>${personaEmoji} ${suggestion}</strong></summary>\n`);
+            lines.push(`> **제안자:** ${personaName}\n`);
+            if (details) {
+                lines.push(details);
+            }
+            lines.push(`\n</details>\n`);
+        }
+    }
     // 상세 리뷰 (detailed 모드)
     if (options.style === "detailed") {
         lines.push("---\n");
+        lines.push("### 📝 상세 분석\n");
         for (const review of reviews) {
             lines.push(`<details>\n<summary>${review.personaEmoji} ${review.personaName} 상세 리뷰</summary>\n`);
-            lines.push(`### ${(0, voter_1.getVoteEmoji)(review.vote)} ${review.vote.toUpperCase()}\n`);
+            lines.push(`#### ${(0, voter_1.getVoteEmoji)(review.vote)} ${review.vote.toUpperCase()}\n`);
             lines.push(`**판정 이유:** ${review.reason}\n`);
             if (review.details) {
-                lines.push("**상세 분석:**\n");
+                lines.push("**분석 내용:**\n");
                 lines.push(review.details);
-                lines.push("");
-            }
-            if (review.suggestions && review.suggestions.length > 0) {
-                lines.push("**개선 제안:**");
-                for (const suggestion of review.suggestions) {
-                    lines.push(`- ${suggestion}`);
-                }
                 lines.push("");
             }
             lines.push("</details>\n");
@@ -49082,6 +49090,25 @@ function generateComment(reviews, votingSummary, options = { style: "detailed", 
     lines.push("---");
     lines.push("*이 리뷰는 [MAGI Review](https://github.com/your-org/magi-review) 시스템에 의해 자동 생성되었습니다.*");
     return lines.join("\n");
+}
+/**
+ * 모든 페르소나의 개선 제안 수집
+ */
+function collectSuggestions(reviews) {
+    const items = [];
+    for (const review of reviews) {
+        if (review.suggestions && review.suggestions.length > 0) {
+            for (const suggestion of review.suggestions) {
+                items.push({
+                    personaEmoji: review.personaEmoji,
+                    personaName: review.personaName,
+                    suggestion,
+                    details: review.details,
+                });
+            }
+        }
+    }
+    return items;
 }
 /**
  * 리뷰에서 액션 아이템 추출
