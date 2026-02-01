@@ -1,10 +1,11 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { VertexAI } from "@google-cloud/vertexai";
+import { GoogleGenAI } from "@google/genai";
 import { LLMProvider } from "./provider.interface";
 
 /**
  * Gemini Provider
- * Google Gemini API (API Key) 또는 Vertex AI (GCP) 지원
+ * @google/genai SDK 사용 (API Key 및 Vertex AI 모두 지원)
+ * - API Key 모드: Gemini Developer API 사용
+ * - GCP 모드: Vertex AI API 사용
  */
 
 interface GeminiConfig {
@@ -18,8 +19,7 @@ interface GeminiConfig {
 export class GeminiProvider implements LLMProvider {
   readonly name = "gemini";
   private config: GeminiConfig;
-  private genAIClient?: GoogleGenerativeAI;
-  private vertexClient?: VertexAI;
+  private client: GoogleGenAI;
 
   /**
    * 모델에 따라 적절한 location 반환
@@ -35,10 +35,9 @@ export class GeminiProvider implements LLMProvider {
 
   constructor(config: GeminiConfig) {
     // 모드별 기본 모델 설정
-    // GCP: gemini-2.5-pro (안정 버전), API Key: gemini-2.5-flash (빠른 속도)
-    // Note: gemini-3-pro-preview는 global 엔드포인트 필요로 현재 SDK에서 불안정
+    // GCP: gemini-3-pro-preview (global 지원), API Key: gemini-2.5-flash (빠른 속도)
     const defaultModel =
-      config.mode === "gcp" ? "gemini-2.5-pro" : "gemini-2.5-flash";
+      config.mode === "gcp" ? "gemini-3-pro-preview" : "gemini-2.5-flash";
 
     const model = config.model ?? defaultModel;
 
@@ -52,22 +51,26 @@ export class GeminiProvider implements LLMProvider {
       gcpLocation: location,
     };
 
+    // @google/genai SDK 초기화
     if (config.mode === "api-key") {
       if (!config.apiKey) {
         throw new Error("API Key is required for api-key mode");
       }
-      this.genAIClient = new GoogleGenerativeAI(config.apiKey);
+      this.client = new GoogleGenAI({
+        apiKey: config.apiKey,
+      });
     } else if (config.mode === "gcp") {
       if (!config.gcpProjectId) {
         throw new Error("GCP Project ID is required for gcp mode");
       }
-      // Vertex AI는 환경변수의 GOOGLE_APPLICATION_CREDENTIALS 또는
-      // GitHub Actions의 gcloud auth를 통해 인증됨
-      // 기본 클라이언트 생성 (reviewWithModel에서 모델별로 다시 생성 가능)
-      this.vertexClient = new VertexAI({
+      // Vertex AI 모드: Application Default Credentials 사용
+      this.client = new GoogleGenAI({
+        vertexai: true,
         project: config.gcpProjectId,
         location: this.config.gcpLocation!,
       });
+    } else {
+      throw new Error("Invalid mode");
     }
   }
 
@@ -109,28 +112,25 @@ export class GeminiProvider implements LLMProvider {
    * 특정 모델로 리뷰 수행 (페르소나별 모델 지원)
    */
   async reviewWithModel(prompt: string, model: string): Promise<string> {
-    if (this.config.mode === "api-key" && this.genAIClient) {
-      return this.reviewWithGenAI(prompt, model);
-    } else if (this.config.mode === "gcp" && this.vertexClient) {
-      return this.reviewWithVertexAI(prompt, model);
+    // gemini-3 계열 모델이 다른 location 필요한 경우 새 클라이언트 생성
+    const modelLocation = GeminiProvider.getLocationForModel(model);
+    let clientToUse = this.client;
+
+    if (
+      this.config.mode === "gcp" &&
+      modelLocation !== this.config.gcpLocation
+    ) {
+      clientToUse = new GoogleGenAI({
+        vertexai: true,
+        project: this.config.gcpProjectId!,
+        location: modelLocation,
+      });
     }
-    throw new Error("Invalid provider configuration");
-  }
 
-  /**
-   * 현재 모드의 기본 모델명 반환
-   */
-  getDefaultModel(): string {
-    return this.config.model!;
-  }
-
-  private async reviewWithGenAI(
-    prompt: string,
-    model: string,
-  ): Promise<string> {
-    const modelInstance = this.genAIClient!.getGenerativeModel({
+    const response = await clientToUse.models.generateContent({
       model: model,
-      generationConfig: {
+      contents: prompt,
+      config: {
         temperature: 0.7,
         topP: 0.95,
         topK: 40,
@@ -138,57 +138,13 @@ export class GeminiProvider implements LLMProvider {
       },
     });
 
-    const result = await modelInstance.generateContent(prompt);
-    const response = result.response;
-    return response.text();
+    return response.text ?? "";
   }
 
-  private async reviewWithVertexAI(
-    prompt: string,
-    model: string,
-  ): Promise<string> {
-    // 모델에 따라 적절한 location 사용
-    // gemini-3 계열은 'global', 그 외는 기존 설정값 사용
-    const modelLocation = GeminiProvider.getLocationForModel(model);
-    let vertexClientToUse = this.vertexClient!;
-
-    // 현재 클라이언트의 location과 다른 경우 새 클라이언트 생성
-    if (modelLocation !== this.config.gcpLocation) {
-      vertexClientToUse = new VertexAI({
-        project: this.config.gcpProjectId!,
-        location: modelLocation,
-      });
-    }
-
-    const generationConfig = {
-      temperature: 0.7,
-      topP: 0.95,
-      topK: 40,
-      maxOutputTokens: 8192,
-    };
-
-    // 프리뷰 모델인 경우 preview API 사용
-    // preview 키워드가 포함된 모델은 vertexAI.preview.getGenerativeModel() 필요
-    const isPreviewModel = model.includes("preview");
-    const modelInstance = isPreviewModel
-      ? vertexClientToUse.preview.getGenerativeModel({
-          model: model,
-          generationConfig,
-        })
-      : vertexClientToUse.getGenerativeModel({
-          model: model,
-          generationConfig,
-        });
-
-    const result = await modelInstance.generateContent({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-    });
-
-    const response = result.response;
-    if (response.candidates && response.candidates.length > 0) {
-      const parts = response.candidates[0].content.parts;
-      return parts.map((p) => ("text" in p ? p.text : "")).join("");
-    }
-    return "";
+  /**
+   * 현재 모드의 기본 모델명 반환
+   */
+  getDefaultModel(): string {
+    return this.config.model!;
   }
 }

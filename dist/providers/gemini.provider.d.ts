@@ -1,7 +1,9 @@
 import { LLMProvider } from "./provider.interface";
 /**
  * Gemini Provider
- * Google Gemini API (API Key) 또는 Vertex AI (GCP) 지원
+ * @google/genai SDK 사용 (API Key 및 Vertex AI 모두 지원)
+ * - API Key 모드: Gemini Developer API 사용
+ * - GCP 모드: Vertex AI API 사용
  */
 interface GeminiConfig {
     mode: "api-key" | "gcp";
@@ -13,8 +15,7 @@ interface GeminiConfig {
 export declare class GeminiProvider implements LLMProvider {
     readonly name = "gemini";
     private config;
-    private genAIClient?;
-    private vertexClient?;
+    private client;
     /**
      * 모델에 따라 적절한 location 반환
      * gemini-3 계열: 'global' 필수 (프리뷰 모델 제한)
@@ -42,8 +43,6 @@ export declare class GeminiProvider implements LLMProvider {
      * 현재 모드의 기본 모델명 반환
      */
     getDefaultModel(): string;
-    private reviewWithGenAI;
-    private reviewWithVertexAI;
 }
 export {};
 //# sourceMappingURL=gemini.provider.d.ts.map
