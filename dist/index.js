@@ -52783,8 +52783,8 @@ class GeminiProvider {
     vertexClient;
     constructor(config) {
         // 모드별 기본 모델 설정
-        // GCP: gemini-3-pro (고품질), API Key: gemini-2.5-flash (빠른 속도)
-        const defaultModel = config.mode === "gcp" ? "gemini-3-pro" : "gemini-2.5-flash";
+        // GCP: gemini-2.5-pro (고품질), API Key: gemini-2.5-flash (빠른 속도)
+        const defaultModel = config.mode === "gcp" ? "gemini-2.5-pro" : "gemini-2.5-flash";
         this.config = {
             ...config,
             model: config.model ?? defaultModel,
