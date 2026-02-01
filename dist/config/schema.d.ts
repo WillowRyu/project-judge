@@ -10,15 +10,18 @@ export declare const PersonaConfigSchema: z.ZodObject<{
     role: z.ZodOptional<z.ZodString>;
     guideline_file: z.ZodOptional<z.ZodString>;
     builtin: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
+    model: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     id: string;
     builtin: boolean;
+    model?: string | undefined;
     name?: string | undefined;
     emoji?: string | undefined;
     role?: string | undefined;
     guideline_file?: string | undefined;
 }, {
     id: string;
+    model?: string | undefined;
     name?: string | undefined;
     emoji?: string | undefined;
     role?: string | undefined;
@@ -119,15 +122,18 @@ export declare const MagiConfigSchema: z.ZodObject<{
         role: z.ZodOptional<z.ZodString>;
         guideline_file: z.ZodOptional<z.ZodString>;
         builtin: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
+        model: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         id: string;
         builtin: boolean;
+        model?: string | undefined;
         name?: string | undefined;
         emoji?: string | undefined;
         role?: string | undefined;
         guideline_file?: string | undefined;
     }, {
         id: string;
+        model?: string | undefined;
         name?: string | undefined;
         emoji?: string | undefined;
         role?: string | undefined;
@@ -213,6 +219,7 @@ export declare const MagiConfigSchema: z.ZodObject<{
     personas?: {
         id: string;
         builtin: boolean;
+        model?: string | undefined;
         name?: string | undefined;
         emoji?: string | undefined;
         role?: string | undefined;
@@ -234,6 +241,7 @@ export declare const MagiConfigSchema: z.ZodObject<{
     } | undefined;
     personas?: {
         id: string;
+        model?: string | undefined;
         name?: string | undefined;
         emoji?: string | undefined;
         role?: string | undefined;

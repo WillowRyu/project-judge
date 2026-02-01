@@ -22,9 +22,14 @@ export class GeminiProvider implements LLMProvider {
   private vertexClient?: VertexAI;
 
   constructor(config: GeminiConfig) {
+    // 모드별 기본 모델 설정
+    // GCP: gemini-3-pro (고품질), API Key: gemini-2.5-flash (빠른 속도)
+    const defaultModel =
+      config.mode === "gcp" ? "gemini-3-pro" : "gemini-2.5-flash";
+
     this.config = {
       ...config,
-      model: config.model ?? "gemini-2.0-flash",
+      model: config.model ?? defaultModel,
       gcpLocation: config.gcpLocation ?? "us-central1",
     };
 
@@ -73,18 +78,38 @@ export class GeminiProvider implements LLMProvider {
     });
   }
 
+  /**
+   * 기본 모델로 리뷰 수행
+   */
   async review(prompt: string): Promise<string> {
+    return this.reviewWithModel(prompt, this.config.model!);
+  }
+
+  /**
+   * 특정 모델로 리뷰 수행 (페르소나별 모델 지원)
+   */
+  async reviewWithModel(prompt: string, model: string): Promise<string> {
     if (this.config.mode === "api-key" && this.genAIClient) {
-      return this.reviewWithGenAI(prompt);
+      return this.reviewWithGenAI(prompt, model);
     } else if (this.config.mode === "gcp" && this.vertexClient) {
-      return this.reviewWithVertexAI(prompt);
+      return this.reviewWithVertexAI(prompt, model);
     }
     throw new Error("Invalid provider configuration");
   }
 
-  private async reviewWithGenAI(prompt: string): Promise<string> {
-    const model = this.genAIClient!.getGenerativeModel({
-      model: this.config.model!,
+  /**
+   * 현재 모드의 기본 모델명 반환
+   */
+  getDefaultModel(): string {
+    return this.config.model!;
+  }
+
+  private async reviewWithGenAI(
+    prompt: string,
+    model: string,
+  ): Promise<string> {
+    const modelInstance = this.genAIClient!.getGenerativeModel({
+      model: model,
       generationConfig: {
         temperature: 0.7,
         topP: 0.95,
@@ -93,14 +118,17 @@ export class GeminiProvider implements LLMProvider {
       },
     });
 
-    const result = await model.generateContent(prompt);
+    const result = await modelInstance.generateContent(prompt);
     const response = result.response;
     return response.text();
   }
 
-  private async reviewWithVertexAI(prompt: string): Promise<string> {
-    const model = this.vertexClient!.getGenerativeModel({
-      model: this.config.model!,
+  private async reviewWithVertexAI(
+    prompt: string,
+    model: string,
+  ): Promise<string> {
+    const modelInstance = this.vertexClient!.getGenerativeModel({
+      model: model,
       generationConfig: {
         temperature: 0.7,
         topP: 0.95,
@@ -109,7 +137,7 @@ export class GeminiProvider implements LLMProvider {
       },
     });
 
-    const result = await model.generateContent({
+    const result = await modelInstance.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
 

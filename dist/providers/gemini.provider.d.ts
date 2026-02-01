@@ -24,7 +24,18 @@ export declare class GeminiProvider implements LLMProvider {
      * GCP 모드용 정적 팩토리 메서드
      */
     static fromGCP(projectId: string, location?: string, model?: string): GeminiProvider;
+    /**
+     * 기본 모델로 리뷰 수행
+     */
     review(prompt: string): Promise<string>;
+    /**
+     * 특정 모델로 리뷰 수행 (페르소나별 모델 지원)
+     */
+    reviewWithModel(prompt: string, model: string): Promise<string>;
+    /**
+     * 현재 모드의 기본 모델명 반환
+     */
+    getDefaultModel(): string;
     private reviewWithGenAI;
     private reviewWithVertexAI;
 }

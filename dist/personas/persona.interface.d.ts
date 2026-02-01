@@ -8,6 +8,7 @@ export interface Persona {
     emoji: string;
     role: string;
     guideline: string;
+    model?: string;
 }
 export type VoteResult = "approve" | "reject" | "conditional";
 export interface ReviewResult {

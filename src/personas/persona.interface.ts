@@ -8,6 +8,7 @@ export interface Persona {
   emoji: string;
   role: string;
   guideline: string;
+  model?: string; // 페르소나별 모델 지정 (미지정 시 Provider 기본값 사용)
 }
 
 export type VoteResult = "approve" | "reject" | "conditional";

@@ -51677,6 +51677,7 @@ exports.PersonaConfigSchema = zod_1.z.object({
     role: zod_1.z.string().optional(),
     guideline_file: zod_1.z.string().optional(),
     builtin: zod_1.z.boolean().optional().default(true),
+    model: zod_1.z.string().optional(), // 페르소나별 모델 (예: gemini-3-pro, gemini-2.5-flash-lite)
 });
 exports.ProviderConfigSchema = zod_1.z.object({
     type: zod_1.z.enum(["gemini", "openai", "claude"]).default("gemini"),
@@ -52704,6 +52705,7 @@ async function loadPersona(workspacePath, personaId, config) {
     return {
         ...meta,
         guideline: finalGuideline,
+        model: config?.model, // 페르소나별 모델 (미지정 시 undefined)
     };
 }
 /**
@@ -52780,9 +52782,12 @@ class GeminiProvider {
     genAIClient;
     vertexClient;
     constructor(config) {
+        // 모드별 기본 모델 설정
+        // GCP: gemini-3-pro (고품질), API Key: gemini-2.5-flash (빠른 속도)
+        const defaultModel = config.mode === "gcp" ? "gemini-3-pro" : "gemini-2.5-flash";
         this.config = {
             ...config,
-            model: config.model ?? "gemini-2.0-flash",
+            model: config.model ?? defaultModel,
             gcpLocation: config.gcpLocation ?? "us-central1",
         };
         if (config.mode === "api-key") {
@@ -52824,18 +52829,33 @@ class GeminiProvider {
             model,
         });
     }
+    /**
+     * 기본 모델로 리뷰 수행
+     */
     async review(prompt) {
+        return this.reviewWithModel(prompt, this.config.model);
+    }
+    /**
+     * 특정 모델로 리뷰 수행 (페르소나별 모델 지원)
+     */
+    async reviewWithModel(prompt, model) {
         if (this.config.mode === "api-key" && this.genAIClient) {
-            return this.reviewWithGenAI(prompt);
+            return this.reviewWithGenAI(prompt, model);
         }
         else if (this.config.mode === "gcp" && this.vertexClient) {
-            return this.reviewWithVertexAI(prompt);
+            return this.reviewWithVertexAI(prompt, model);
         }
         throw new Error("Invalid provider configuration");
     }
-    async reviewWithGenAI(prompt) {
-        const model = this.genAIClient.getGenerativeModel({
-            model: this.config.model,
+    /**
+     * 현재 모드의 기본 모델명 반환
+     */
+    getDefaultModel() {
+        return this.config.model;
+    }
+    async reviewWithGenAI(prompt, model) {
+        const modelInstance = this.genAIClient.getGenerativeModel({
+            model: model,
             generationConfig: {
                 temperature: 0.7,
                 topP: 0.95,
@@ -52843,13 +52863,13 @@ class GeminiProvider {
                 maxOutputTokens: 8192,
             },
         });
-        const result = await model.generateContent(prompt);
+        const result = await modelInstance.generateContent(prompt);
         const response = result.response;
         return response.text();
     }
-    async reviewWithVertexAI(prompt) {
-        const model = this.vertexClient.getGenerativeModel({
-            model: this.config.model,
+    async reviewWithVertexAI(prompt, model) {
+        const modelInstance = this.vertexClient.getGenerativeModel({
+            model: model,
             generationConfig: {
                 temperature: 0.7,
                 topP: 0.95,
@@ -52857,7 +52877,7 @@ class GeminiProvider {
                 maxOutputTokens: 8192,
             },
         });
-        const result = await model.generateContent({
+        const result = await modelInstance.generateContent({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
         });
         const response = result.response;
@@ -53012,7 +53032,15 @@ exports.runReviews = runReviews;
 async function reviewWithPersona(provider, persona, context) {
     const prompt = buildPrompt(persona, context);
     try {
-        const response = await provider.review(prompt);
+        let response;
+        // 페르소나별 모델이 지정된 경우 reviewWithModel 사용
+        if (persona.model && provider.reviewWithModel) {
+            console.log(`    Using model: ${persona.model}`);
+            response = await provider.reviewWithModel(prompt, persona.model);
+        }
+        else {
+            response = await provider.review(prompt);
+        }
         return parseReviewResponse(persona, response);
     }
     catch (error) {

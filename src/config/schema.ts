@@ -12,6 +12,7 @@ export const PersonaConfigSchema = z.object({
   role: z.string().optional(),
   guideline_file: z.string().optional(),
   builtin: z.boolean().optional().default(true),
+  model: z.string().optional(), // 페르소나별 모델 (예: gemini-3-pro, gemini-2.5-flash-lite)
 });
 
 export const ProviderConfigSchema = z.object({

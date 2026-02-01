@@ -5,6 +5,8 @@
 export interface LLMProvider {
   readonly name: string;
   review(prompt: string): Promise<string>;
+  reviewWithModel?(prompt: string, model: string): Promise<string>;
+  getDefaultModel?(): string;
 }
 
 export interface ProviderConfig {

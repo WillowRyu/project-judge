@@ -31,7 +31,16 @@ async function reviewWithPersona(
   const prompt = buildPrompt(persona, context);
 
   try {
-    const response = await provider.review(prompt);
+    let response: string;
+
+    // 페르소나별 모델이 지정된 경우 reviewWithModel 사용
+    if (persona.model && provider.reviewWithModel) {
+      console.log(`    Using model: ${persona.model}`);
+      response = await provider.reviewWithModel(prompt, persona.model);
+    } else {
+      response = await provider.review(prompt);
+    }
+
     return parseReviewResponse(persona, response);
   } catch (error) {
     console.error(`Error reviewing with ${persona.name}:`, error);
