@@ -15,9 +15,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: MAGI Review
-        uses: ./ # 로컬 액션 사용 (배포 시: your-org/magi-review@v1)
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
         with:
-          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: MAGI Review
+        uses: ./
+        with:
+          gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
+          gcp_location: us-central1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
