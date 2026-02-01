@@ -238,7 +238,22 @@ export class GeminiProvider implements LLMProvider {
     try {
       console.log(`  Using cached context: ${cacheId.slice(-20)}`);
 
-      const response = await this.client.models.generateContent({
+      // gemini-3 계열은 global location 필요
+      const modelLocation = GeminiProvider.getLocationForModel(model);
+      let clientToUse = this.client;
+
+      if (
+        this.config.mode === "gcp" &&
+        modelLocation !== this.config.gcpLocation
+      ) {
+        clientToUse = new GoogleGenAI({
+          vertexai: true,
+          project: this.config.gcpProjectId!,
+          location: modelLocation,
+        });
+      }
+
+      const response = await clientToUse.models.generateContent({
         model: model,
         contents: personaPrompt,
         config: {
