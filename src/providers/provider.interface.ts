@@ -5,11 +5,15 @@
 export interface LLMProvider {
   readonly name: string;
   review(prompt: string): Promise<string>;
+  reviewWithModel?(prompt: string, model: string): Promise<string>;
+  getDefaultModel?(): string;
 }
 
 export interface ProviderConfig {
   type: "gemini" | "openai" | "claude";
   apiKey?: string;
-  gcpCredentials?: string;
+  // GCP Vertex AI 인증용
+  gcpProjectId?: string;
+  gcpLocation?: string;
   model?: string;
 }

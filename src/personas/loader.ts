@@ -121,6 +121,7 @@ export async function loadPersona(
   return {
     ...meta,
     guideline: finalGuideline,
+    model: config?.model, // 페르소나별 모델 (미지정 시 undefined)
   };
 }
 

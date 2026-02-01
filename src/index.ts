@@ -27,9 +27,21 @@ async function run(): Promise<void> {
     console.log("🏛️ MAGI Review System Starting...\n");
 
     // 1. 입력값 가져오기
-    const geminiApiKey = core.getInput("gemini_api_key", { required: true });
+    const geminiApiKey = core.getInput("gemini_api_key");
+    const gcpProjectId = core.getInput("gcp_project_id");
+    const gcpLocation = core.getInput("gcp_location") || "us-central1";
     const configPath = core.getInput("config_path");
     const githubToken = process.env.GITHUB_TOKEN;
+
+    // 인증 방식 확인
+    if (!geminiApiKey && !gcpProjectId) {
+      throw new Error(
+        "Either gemini_api_key or gcp_project_id is required for authentication",
+      );
+    }
+
+    const authMode = gcpProjectId ? "GCP Vertex AI" : "API Key";
+    console.log(`🔐 Authentication Mode: ${authMode}\n`);
 
     if (!githubToken) {
       throw new Error(
@@ -88,7 +100,9 @@ async function run(): Promise<void> {
     // 9. LLM Provider 생성
     const provider = createProvider({
       type: config.provider?.type || "gemini",
-      apiKey: geminiApiKey,
+      apiKey: geminiApiKey || undefined,
+      gcpProjectId: gcpProjectId || undefined,
+      gcpLocation: gcpLocation,
       model: config.provider?.model,
     });
     console.log(`🤖 Using ${provider.name} provider\n`);
@@ -114,9 +128,13 @@ async function run(): Promise<void> {
       headBranch: prInfo.headBranch,
     };
 
-    // 12. 리뷰 실행
+    // 12. 리뷰 실행 (토큰 최적화 옵션 적용)
     console.log("🔍 Running reviews...\n");
-    const reviews = await runReviews(provider, personas, prContext);
+    const reviews = await runReviews(provider, personas, prContext, {
+      enableCaching: config.optimization?.context_caching ?? true,
+      enableCompression: config.optimization?.prompt_compression ?? true,
+      tieredModels: config.optimization?.tiered_models,
+    });
 
     // 13. 투표 집계
     const votingSummary = countVotesWithConfig(reviews, {

@@ -39,42 +39,74 @@ export function generateComment(
   }
   lines.push("");
 
-  // 상세 리뷰 (detailed 모드)
+  // ========================================
+  // 상세 분석 섹션
+  // ========================================
   if (options.style === "detailed") {
-    lines.push("---\n");
+    lines.push("---");
+    lines.push("## 📝 상세 분석\n");
 
     for (const review of reviews) {
+      lines.push(`<details>`);
       lines.push(
-        `<details>\n<summary>${review.personaEmoji} ${review.personaName} 상세 리뷰</summary>\n`,
+        `<summary><strong>${review.personaEmoji} ${review.personaName}</strong> (${getVoteEmoji(review.vote)} ${review.vote})</summary>`,
       );
-      lines.push(
-        `### ${getVoteEmoji(review.vote)} ${review.vote.toUpperCase()}\n`,
-      );
-      lines.push(`**판정 이유:** ${review.reason}\n`);
+      lines.push(""); // 빈 줄 추가로 가독성 향상
+      lines.push("<br>\n"); // 추가 간격
 
       if (review.details) {
-        lines.push("**상세 분석:**\n");
         lines.push(review.details);
-        lines.push("");
       }
 
-      if (review.suggestions && review.suggestions.length > 0) {
-        lines.push("**개선 제안:**");
-        for (const suggestion of review.suggestions) {
-          lines.push(`- ${suggestion}`);
-        }
-        lines.push("");
-      }
-
-      lines.push("</details>\n");
+      lines.push("\n</details>\n");
     }
   }
 
-  // 액션 아이템
+  // ========================================
+  // 개선 제안 섹션 (페르소나별 그룹화 + 이유 포함)
+  // ========================================
+  const suggestionsByPersona = groupSuggestionsByPersona(reviews);
+  if (suggestionsByPersona.length > 0) {
+    lines.push("---");
+    lines.push("## 💡 개선 제안\n");
+
+    for (const {
+      personaEmoji,
+      personaName,
+      suggestions,
+      reason,
+    } of suggestionsByPersona) {
+      lines.push(`<details>`);
+      lines.push(
+        `<summary><strong>${personaEmoji} ${personaName}</strong> (${suggestions.length}개 제안)</summary>`,
+      );
+      lines.push(""); // 빈 줄 추가
+      lines.push("<br>\n"); // 추가 간격
+
+      // 판정 이유 포함
+      if (reason) {
+        lines.push(`> 💬 **판정 이유:** ${reason}\n`);
+      }
+
+      // 테이블 형식으로 제안 표시
+      lines.push("| # | 제안 내용 |");
+      lines.push("|---|----------|");
+      for (let i = 0; i < suggestions.length; i++) {
+        lines.push(`| ${i + 1} | ${suggestions[i]} |`);
+      }
+
+      lines.push("\n</details>\n");
+    }
+  }
+
+  // ========================================
+  // 액션 아이템 (체크리스트)
+  // ========================================
   if (options.includeActionItems) {
     const actionItems = extractActionItems(reviews);
     if (actionItems.length > 0) {
-      lines.push("### 📋 액션 아이템\n");
+      lines.push("---");
+      lines.push("## 📋 액션 아이템\n");
       for (const item of actionItems) {
         lines.push(`- [ ] ${item}`);
       }
@@ -89,6 +121,35 @@ export function generateComment(
   );
 
   return lines.join("\n");
+}
+
+interface PersonaSuggestions {
+  personaEmoji: string;
+  personaName: string;
+  suggestions: string[];
+  reason: string;
+}
+
+/**
+ * 페르소나별로 제안 그룹화
+ */
+function groupSuggestionsByPersona(
+  reviews: ReviewResult[],
+): PersonaSuggestions[] {
+  const result: PersonaSuggestions[] = [];
+
+  for (const review of reviews) {
+    if (review.suggestions && review.suggestions.length > 0) {
+      result.push({
+        personaEmoji: review.personaEmoji,
+        personaName: review.personaName,
+        suggestions: review.suggestions,
+        reason: review.reason,
+      });
+    }
+  }
+
+  return result;
 }
 
 /**
