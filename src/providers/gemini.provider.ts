@@ -159,15 +159,25 @@ export class GeminiProvider implements LLMProvider {
       });
     }
 
-    const modelInstance = vertexClientToUse.getGenerativeModel({
-      model: model,
-      generationConfig: {
-        temperature: 0.7,
-        topP: 0.95,
-        topK: 40,
-        maxOutputTokens: 8192,
-      },
-    });
+    const generationConfig = {
+      temperature: 0.7,
+      topP: 0.95,
+      topK: 40,
+      maxOutputTokens: 8192,
+    };
+
+    // 프리뷰 모델인 경우 preview API 사용
+    // preview 키워드가 포함된 모델은 vertexAI.preview.getGenerativeModel() 필요
+    const isPreviewModel = model.includes("preview");
+    const modelInstance = isPreviewModel
+      ? vertexClientToUse.preview.getGenerativeModel({
+          model: model,
+          generationConfig,
+        })
+      : vertexClientToUse.getGenerativeModel({
+          model: model,
+          generationConfig,
+        });
 
     const result = await modelInstance.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
