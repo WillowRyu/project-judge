@@ -15,6 +15,12 @@ export declare class GeminiProvider implements LLMProvider {
     private config;
     private genAIClient?;
     private vertexClient?;
+    /**
+     * 모델에 따라 적절한 location 반환
+     * gemini-3 계열: 'global' 필수 (프리뷰 모델 제한)
+     * 그 외: 'us-central1' (기본값)
+     */
+    private static getLocationForModel;
     constructor(config: GeminiConfig);
     /**
      * API Key 모드용 정적 팩토리 메서드

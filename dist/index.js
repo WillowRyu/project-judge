@@ -52781,14 +52781,28 @@ class GeminiProvider {
     config;
     genAIClient;
     vertexClient;
+    /**
+     * 모델에 따라 적절한 location 반환
+     * gemini-3 계열: 'global' 필수 (프리뷰 모델 제한)
+     * 그 외: 'us-central1' (기본값)
+     */
+    static getLocationForModel(model) {
+        if (model.startsWith("gemini-3")) {
+            return "global";
+        }
+        return "us-central1";
+    }
     constructor(config) {
         // 모드별 기본 모델 설정
         // GCP: gemini-3-pro-preview (최신 프리뷰), API Key: gemini-2.5-flash (빠른 속도)
         const defaultModel = config.mode === "gcp" ? "gemini-3-pro-preview" : "gemini-2.5-flash";
+        const model = config.model ?? defaultModel;
+        // gemini-3 모델은 'global' 리전 필수
+        const location = config.gcpLocation ?? GeminiProvider.getLocationForModel(model);
         this.config = {
             ...config,
-            model: config.model ?? defaultModel,
-            gcpLocation: config.gcpLocation ?? "us-central1",
+            model: model,
+            gcpLocation: location,
         };
         if (config.mode === "api-key") {
             if (!config.apiKey) {
@@ -52802,6 +52816,7 @@ class GeminiProvider {
             }
             // Vertex AI는 환경변수의 GOOGLE_APPLICATION_CREDENTIALS 또는
             // GitHub Actions의 gcloud auth를 통해 인증됨
+            // 기본 클라이언트 생성 (reviewWithModel에서 모델별로 다시 생성 가능)
             this.vertexClient = new vertexai_1.VertexAI({
                 project: config.gcpProjectId,
                 location: this.config.gcpLocation,
@@ -52868,7 +52883,18 @@ class GeminiProvider {
         return response.text();
     }
     async reviewWithVertexAI(prompt, model) {
-        const modelInstance = this.vertexClient.getGenerativeModel({
+        // 모델에 따라 적절한 location 사용
+        // gemini-3 계열은 'global', 그 외는 기존 설정값 사용
+        const modelLocation = GeminiProvider.getLocationForModel(model);
+        let vertexClientToUse = this.vertexClient;
+        // 현재 클라이언트의 location과 다른 경우 새 클라이언트 생성
+        if (modelLocation !== this.config.gcpLocation) {
+            vertexClientToUse = new vertexai_1.VertexAI({
+                project: this.config.gcpProjectId,
+                location: modelLocation,
+            });
+        }
+        const modelInstance = vertexClientToUse.getGenerativeModel({
             model: model,
             generationConfig: {
                 temperature: 0.7,
