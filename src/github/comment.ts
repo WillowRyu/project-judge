@@ -47,9 +47,12 @@ export function generateComment(
     lines.push("## 📝 상세 분석\n");
 
     for (const review of reviews) {
+      lines.push(`<details>`);
       lines.push(
-        `<details>\n<summary><strong>${review.personaEmoji} ${review.personaName}</strong> (${getVoteEmoji(review.vote)} ${review.vote})</summary>\n`,
+        `<summary><strong>${review.personaEmoji} ${review.personaName}</strong> (${getVoteEmoji(review.vote)} ${review.vote})</summary>`,
       );
+      lines.push(""); // 빈 줄 추가로 가독성 향상
+      lines.push("<br>\n"); // 추가 간격
 
       if (review.details) {
         lines.push(review.details);
@@ -60,7 +63,7 @@ export function generateComment(
   }
 
   // ========================================
-  // 개선 제안 섹션 (페르소나별 그룹화)
+  // 개선 제안 섹션 (페르소나별 그룹화 + 이유 포함)
   // ========================================
   const suggestionsByPersona = groupSuggestionsByPersona(reviews);
   if (suggestionsByPersona.length > 0) {
@@ -71,14 +74,25 @@ export function generateComment(
       personaEmoji,
       personaName,
       suggestions,
+      reason,
     } of suggestionsByPersona) {
       lines.push(`<details>`);
       lines.push(
-        `<summary><strong>${personaEmoji} ${personaName}</strong> (${suggestions.length}개 제안)</summary>\n`,
+        `<summary><strong>${personaEmoji} ${personaName}</strong> (${suggestions.length}개 제안)</summary>`,
       );
+      lines.push(""); // 빈 줄 추가
+      lines.push("<br>\n"); // 추가 간격
 
+      // 판정 이유 포함
+      if (reason) {
+        lines.push(`> 💬 **판정 이유:** ${reason}\n`);
+      }
+
+      // 테이블 형식으로 제안 표시
+      lines.push("| # | 제안 내용 |");
+      lines.push("|---|----------|");
       for (let i = 0; i < suggestions.length; i++) {
-        lines.push(`${i + 1}. ${suggestions[i]}`);
+        lines.push(`| ${i + 1} | ${suggestions[i]} |`);
       }
 
       lines.push("\n</details>\n");
@@ -113,6 +127,7 @@ interface PersonaSuggestions {
   personaEmoji: string;
   personaName: string;
   suggestions: string[];
+  reason: string;
 }
 
 /**
@@ -129,6 +144,7 @@ function groupSuggestionsByPersona(
         personaEmoji: review.personaEmoji,
         personaName: review.personaName,
         suggestions: review.suggestions,
+        reason: review.reason,
       });
     }
   }

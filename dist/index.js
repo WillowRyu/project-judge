@@ -49052,7 +49052,10 @@ function generateComment(reviews, votingSummary, options = { style: "detailed", 
         lines.push("---");
         lines.push("## 📝 상세 분석\n");
         for (const review of reviews) {
-            lines.push(`<details>\n<summary><strong>${review.personaEmoji} ${review.personaName}</strong> (${(0, voter_1.getVoteEmoji)(review.vote)} ${review.vote})</summary>\n`);
+            lines.push(`<details>`);
+            lines.push(`<summary><strong>${review.personaEmoji} ${review.personaName}</strong> (${(0, voter_1.getVoteEmoji)(review.vote)} ${review.vote})</summary>`);
+            lines.push(""); // 빈 줄 추가로 가독성 향상
+            lines.push("<br>\n"); // 추가 간격
             if (review.details) {
                 lines.push(review.details);
             }
@@ -49060,17 +49063,26 @@ function generateComment(reviews, votingSummary, options = { style: "detailed", 
         }
     }
     // ========================================
-    // 개선 제안 섹션 (페르소나별 그룹화)
+    // 개선 제안 섹션 (페르소나별 그룹화 + 이유 포함)
     // ========================================
     const suggestionsByPersona = groupSuggestionsByPersona(reviews);
     if (suggestionsByPersona.length > 0) {
         lines.push("---");
         lines.push("## 💡 개선 제안\n");
-        for (const { personaEmoji, personaName, suggestions, } of suggestionsByPersona) {
+        for (const { personaEmoji, personaName, suggestions, reason, } of suggestionsByPersona) {
             lines.push(`<details>`);
-            lines.push(`<summary><strong>${personaEmoji} ${personaName}</strong> (${suggestions.length}개 제안)</summary>\n`);
+            lines.push(`<summary><strong>${personaEmoji} ${personaName}</strong> (${suggestions.length}개 제안)</summary>`);
+            lines.push(""); // 빈 줄 추가
+            lines.push("<br>\n"); // 추가 간격
+            // 판정 이유 포함
+            if (reason) {
+                lines.push(`> 💬 **판정 이유:** ${reason}\n`);
+            }
+            // 테이블 형식으로 제안 표시
+            lines.push("| # | 제안 내용 |");
+            lines.push("|---|----------|");
             for (let i = 0; i < suggestions.length; i++) {
-                lines.push(`${i + 1}. ${suggestions[i]}`);
+                lines.push(`| ${i + 1} | ${suggestions[i]} |`);
             }
             lines.push("\n</details>\n");
         }
@@ -49105,6 +49117,7 @@ function groupSuggestionsByPersona(reviews) {
                 personaEmoji: review.personaEmoji,
                 personaName: review.personaName,
                 suggestions: review.suggestions,
+                reason: review.reason,
             });
         }
     }
