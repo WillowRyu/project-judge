@@ -2,8 +2,8 @@
 node_modules/
 .pnpm-store/
 
-# Build output
-dist/
+# Build output - NOT ignored for GitHub Actions
+# dist/
 
 # IDE
 .idea/
