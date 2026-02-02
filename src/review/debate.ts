@@ -198,8 +198,16 @@ export async function runDebateRound(
     if (debateResp?.changedVote) {
       return {
         ...review,
+        originalVote: review.vote, // 원래 투표 저장
         vote: debateResp.changedVote,
         reason: debateResp.newReason || review.reason,
+        debateResponse: debateResp.response,
+      };
+    }
+    // 투표 변경 없어도 토론 응답이 있으면 추가
+    if (debateResp?.response) {
+      return {
+        ...review,
         debateResponse: debateResp.response,
       };
     }

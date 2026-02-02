@@ -20,6 +20,7 @@ export interface ReviewResult {
     details: string;
     suggestions?: string[];
     debateResponse?: string;
+    originalVote?: VoteResult;
 }
 export interface VotingSummary {
     totalVoters: number;
