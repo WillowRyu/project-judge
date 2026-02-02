@@ -110,6 +110,53 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+### Comment-Triggered Re-Review
+
+Run review only on PR open, and re-run via `/magi-review` comment:
+
+`.github/workflows/magi-review.yml`:
+
+```yaml
+name: MAGI Review
+
+on:
+  pull_request:
+    types: [opened] # Only on first open
+  issue_comment:
+    types: [created] # Re-trigger via comment
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  magi-review:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' && 
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/magi-review'))
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/head', github.event.issue.number) || '' }}
+
+      - uses: WillowRyu/project-judge@main
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+**Usage:**
+| Trigger | When |
+|:--------|:-----|
+| PR Created | Auto-run once |
+| Code Push | ❌ No run |
+| `/magi-review` comment | ✅ Re-run |
+
 ## ⚙️ Configuration
 
 Customize behavior with `.github/magi.yml`:

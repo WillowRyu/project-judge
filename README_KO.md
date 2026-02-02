@@ -110,6 +110,53 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+### 코멘트로 재실행 트리거
+
+PR 생성 시 1회만 실행하고, `/magi-review` 코멘트로 재실행:
+
+`.github/workflows/magi-review.yml`:
+
+```yaml
+name: MAGI Review
+
+on:
+  pull_request:
+    types: [opened] # 처음 생성 시만
+  issue_comment:
+    types: [created] # 코멘트로 재트리거
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  magi-review:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' && 
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/magi-review'))
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/head', github.event.issue.number) || '' }}
+
+      - uses: WillowRyu/project-judge@main
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+**사용법:**
+| 트리거 | 실행 조건 |
+|:-------|:----------|
+| PR 생성 | 자동 실행 (1회) |
+| 코드 push | ❌ 실행 안 함 |
+| `/magi-review` 코멘트 | ✅ 재실행 |
+
 ## ⚙️ 설정
 
 `.github/magi.yml` 파일로 동작을 커스터마이징:
