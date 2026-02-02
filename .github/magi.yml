@@ -14,7 +14,7 @@ voting:
 debate:
   enabled: true
   max_rounds: 1
-  trigger: disagreement # 의견 충돌 시 토론
+  trigger: always # 항상 토론 실행 (테스트용)
   revote_after_debate: true
 
 # 출력 설정
