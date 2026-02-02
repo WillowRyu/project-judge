@@ -12,10 +12,7 @@ voting:
 
 # 토론 기능 (Phase 2)
 debate:
-  enabled: true
-  max_rounds: 1
-  trigger: always # 항상 토론 실행 (테스트용)
-  revote_after_debate: true
+  enabled: false
 
 # 출력 설정
 output:
