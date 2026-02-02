@@ -1,32 +1,32 @@
 # MAGI Review
 
-🏛️ 에반게리온의 MAGI 시스템을 모티브로 한 AI 코드 리뷰 봇
+🏛️ AI Code Review Bot inspired by Evangelion's MAGI System
 
-3개의 페르소나(MELCHIOR, BALTHASAR, CASPER)가 각각 다른 관점에서 PR을 평가하고,
-**2/3 이상 찬성** 시 승인합니다.
+Three personas (MELCHIOR, BALTHASAR, CASPER) evaluate PRs from different perspectives.
+Approves when **2/3 or more** personas agree.
 
-## 🎭 페르소나
+## 🎭 Personas
 
-| 페르소나         | 역할      | 리뷰 포커스                          | 성격              |
-| ---------------- | --------- | ------------------------------------ | ----------------- |
-| 🔬 **MELCHIOR**  | 과학자    | 코드 효율성, 알고리즘, 버그, 보안    | 냉철하고 기술적   |
-| 👩‍👧 **BALTHASAR** | 어머니    | 유지보수성, 가독성, 컨벤션, 테스트   | 엄격하지만 협력적 |
-| 💃 **CASPER**    | 여자/인간 | UX/UI 일관성, 기획 의도, 사용자 경험 | 직관적이고 감성적 |
+| Persona          | Role        | Focus                                            | Personality              |
+| ---------------- | ----------- | ------------------------------------------------ | ------------------------ |
+| 🔬 **MELCHIOR**  | Scientist   | Code efficiency, algorithms, bugs, security      | Cold and technical       |
+| 👩‍👧 **BALTHASAR** | Mother      | Maintainability, readability, conventions, tests | Strict but collaborative |
+| 💃 **CASPER**    | Woman/Human | UX/UI consistency, user experience               | Intuitive and emotional  |
 
-## 🚀 빠른 시작
+## 🚀 Quick Start
 
-3가지 LLM Provider 중 선택하여 사용할 수 있습니다:
+Choose from 3 LLM Providers:
 
-| Provider   | 기본 모델                    | 환경변수                               |
-| :--------- | :--------------------------- | :------------------------------------- |
-| **Gemini** | `gemini-2.5-flash`           | `GEMINI_API_KEY` 또는 `GCP_PROJECT_ID` |
-| **OpenAI** | `gpt-5.2`                    | `OPENAI_API_KEY`                       |
-| **Claude** | `claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY`                    |
+| Provider   | Default Model                | Environment Variable                 |
+| :--------- | :--------------------------- | :----------------------------------- |
+| **Gemini** | `gemini-2.5-flash`           | `GEMINI_API_KEY` or `GCP_PROJECT_ID` |
+| **OpenAI** | `gpt-5.2`                    | `OPENAI_API_KEY`                     |
+| **Claude** | `claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY`                  |
 
-### Option 1: Gemini (기본)
+### Option 1: Gemini (Default)
 
 ```yaml
-- uses: your-org/magi-review@v1
+- uses: WillowRyu/project-judge@main
   with:
     gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
   env:
@@ -36,14 +36,14 @@
 ### Option 2: OpenAI (GPT-5)
 
 ```yaml
-- uses: your-org/magi-review@v1
+- uses: WillowRyu/project-judge@main
   with:
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-`.github/magi.yml`에서 provider 설정:
+`.github/magi.yml`:
 
 ```yaml
 provider:
@@ -54,14 +54,14 @@ provider:
 ### Option 3: Claude (Anthropic)
 
 ```yaml
-- uses: your-org/magi-review@v1
+- uses: WillowRyu/project-judge@main
   with:
     anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-`.github/magi.yml`에서 provider 설정:
+`.github/magi.yml`:
 
 ```yaml
 provider:
@@ -69,21 +69,21 @@ provider:
   model: claude-sonnet-4-5-20250929 # optional
 ```
 
-### Option 4: GCP Vertex AI (엔터프라이즈용)
+### Option 4: GCP Vertex AI (Enterprise)
 
 ```yaml
 - uses: google-github-actions/auth@v2
   with:
     credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-- uses: your-org/magi-review@v1
+- uses: WillowRyu/project-judge@main
   with:
     gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-### Workflow 예제
+### Full Workflow Example
 
 `.github/workflows/magi-review.yml`:
 
@@ -103,30 +103,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: your-org/magi-review@v1
+      - uses: WillowRyu/project-judge@main
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-## ⚙️ 설정 (Optional)
+## ⚙️ Configuration
 
-`.github/magi.yml` 파일로 동작을 커스터마이징할 수 있습니다:
+Customize behavior with `.github/magi.yml`:
 
 ```yaml
 version: 1
 
-# Provider 설정 (gemini | openai | claude)
+# Provider settings (gemini | openai | claude)
 provider:
-  type: gemini # 또는 openai, claude
+  type: gemini
   model: gemini-2.5-flash # optional
 
-# 투표 설정
+# Voting settings
 voting:
-  required_approvals: 2 # 필요한 찬성 수
+  required_approvals: 2 # Required approval count
 
-# 출력 설정
+# Debate feature
+debate:
+  enabled: true
+  max_rounds: 1
+  trigger: disagreement # conflict | disagreement | always
+
+# Output settings
 output:
   pr_comment:
     enabled: true
@@ -136,7 +142,13 @@ output:
     approved: magi-approved
     rejected: magi-changes-requested
 
-# 무시할 파일
+# Notifications
+notifications:
+  slack:
+    enabled: true
+    notify_on: all # all | rejection | approval
+
+# Ignore files
 ignore:
   files:
     - "*.lock"
@@ -146,14 +158,89 @@ ignore:
     - "dist/"
 ```
 
-## 🎨 페르소나 커스터마이징
+## 📱 Slack Notifications
 
-### 페르소나별 Provider 지정
+Send review results to Slack channel.
 
-각 페르소나마다 다른 LLM Provider와 모델을 사용할 수 있습니다:
+### Setup
+
+1. **Create Slack Webhook:**
+   - Go to Slack → Apps → "Incoming Webhooks"
+   - Select channel and create webhook URL
+
+2. **Add to GitHub Secrets:**
+   - Add `SLACK_WEBHOOK_URL` to repository secrets
+
+3. **Update Workflow:**
 
 ```yaml
-# .github/magi.yml
+- uses: WillowRyu/project-judge@main
+  with:
+    gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+    slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+```
+
+4. **Enable in magi.yml:**
+
+```yaml
+notifications:
+  slack:
+    enabled: true
+    notify_on: all # all | rejection | approval
+```
+
+### Slack Message Preview
+
+```
+🏛️ MAGI Review Result
+
+#42 feat: add user authentication
+
+✅ Approved (2/3, 2 votes required)
+
+🔬 MELCHIOR  ✅ approve
+👩‍👧 BALTHASAR ⚠️ conditional
+💃 CASPER    ✅ approve
+
+[📋 View PR] [🔍 View Details]
+```
+
+## 💬 Debate Feature
+
+When personas disagree, they debate and may change their votes.
+
+### Configuration
+
+```yaml
+debate:
+  enabled: true
+  max_rounds: 1
+  trigger: disagreement # conflict | disagreement | always
+  revote_after_debate: true
+```
+
+### Trigger Options
+
+| Trigger        | Description                             |
+| -------------- | --------------------------------------- |
+| `conflict`     | Only when both approve and reject exist |
+| `disagreement` | When votes are not unanimous            |
+| `always`       | Always debate (for testing)             |
+
+### Vote Changes
+
+After debate, vote changes are shown as:
+
+- `❌ reject → ⚠️ conditional`
+- `⚠️ conditional → ✅ approve`
+
+## 🎨 Persona Customization
+
+### Per-Persona Provider
+
+Use different LLM providers for each persona:
+
+```yaml
 personas:
   - id: melchior
     provider: openai
@@ -166,87 +253,92 @@ personas:
     model: gemini-2.5-flash
 ```
 
-> **Note:** 페르소나별 provider를 사용하려면 해당 API key를 모두 설정해야 합니다.
+> **Note:** Provide all required API keys when using per-persona providers.
 
-### 공통 지침 추가
+### Common Guidelines
 
-`.github/magi/common.md` 파일을 생성하면 모든 페르소나에 적용됩니다:
+Create `.github/magi/common.md` to add guidelines for all personas:
 
 ```markdown
-# 우리 팀 추가 지침
+# Team Guidelines
 
-## 프로젝트 컨텍스트
+## Project Context
 
-- 이 프로젝트는 e-commerce 플랫폼입니다
-- PCI DSS 규정 준수 필수
+- This is an e-commerce platform
+- PCI DSS compliance required
 
-## 팀 컨벤션
+## Team Conventions
 
-- 모든 API는 REST 규칙 준수
-- 에러 코드는 ERR\_ prefix 사용
+- All APIs follow REST conventions
+- Error codes use ERR\_ prefix
 ```
 
-### 특정 페르소나 커스터마이징
+### Custom Persona Guidelines
 
-`.github/magi/melchior.md` 등의 파일로 개별 페르소나를 완전히 커스터마이징할 수 있습니다.
+Create `.github/magi/melchior.md` to fully customize individual personas.
 
-**우선순위:**
+**Priority:**
 
-1. 커스텀 지침 파일 (있으면 사용)
-2. 내장 기본 지침 (없으면 폴백)
-3. \+ common.md (항상 추가)
+1. Custom guideline file (if exists)
+2. Built-in default (fallback)
+3. \+ common.md (always appended)
 
-## 📊 출력 예시
+## 📊 Output Example
 
 ```
-## 🏛️ MAGI 시스템 리뷰 결과
+## 🏛️ MAGI System Review Result
 
-### ✅ 승인 (2/3)
+### ✅ Approved (2/3)
 
-| 페르소나 | 판정 | 핵심 이유 |
-|:-------:|:----:|----------|
-| 🔬 MELCHIOR | ✅ | 알고리즘 효율적, 보안 이슈 없음 |
-| 👩‍👧 BALTHASAR | ❌ | 테스트 커버리지 부족 |
-| 💃 CASPER | ✅ | UX 일관성 양호 |
+| Persona | Vote | Reason |
+|:-------:|:----:|--------|
+| 🔬 MELCHIOR | ✅ | Algorithm efficient, no security issues |
+| 👩‍👧 BALTHASAR | ❌ reject → ⚠️ conditional | After debate: maintainability concerns addressed |
+| 💃 CASPER | ✅ | UX consistency maintained |
 
 <details>
-<summary>🔬 MELCHIOR 상세 리뷰</summary>
+<summary>🔬 MELCHIOR Details</summary>
 ...
 </details>
 ```
 
-## 📁 프로젝트 구조
+## 📁 Project Structure
 
 ```
 project-judge/
 ├── src/
-│   ├── index.ts              # 메인 엔트리포인트
-│   ├── config/               # 설정 로더 & 스키마
-│   ├── providers/            # LLM Provider (Gemini, OpenAI, Claude)
-│   ├── personas/             # 페르소나 & 지침
-│   │   └── built-in/         # 내장 기본 지침
-│   ├── review/               # 리뷰 엔진
-│   └── github/               # GitHub API 연동
-├── action.yml                # GitHub Action 메타
-└── .github/workflows/        # 예제 워크플로우
+│   ├── index.ts              # Main entry point
+│   ├── config/               # Config loader & schema
+│   ├── providers/            # LLM Providers (Gemini, OpenAI, Claude)
+│   ├── personas/             # Personas & guidelines
+│   │   └── built-in/         # Built-in defaults
+│   ├── review/               # Review engine
+│   ├── notifications/        # Slack notifications
+│   └── github/               # GitHub API integration
+├── action.yml                # GitHub Action metadata
+└── .github/workflows/        # Example workflows
 ```
 
-## 🔧 개발
+## 🔧 Development
 
 ```bash
-# 의존성 설치
+# Install dependencies
 pnpm install
 
-# 타입 체크
+# Type check
 pnpm typecheck
 
-# 빌드
+# Build
 pnpm build
 
-# 테스트
+# Test
 pnpm test
 ```
 
-## 📝 라이선스
+## 📝 License
 
 MIT
+
+---
+
+📖 [한국어 문서 (Korean)](./README_KO.md)
