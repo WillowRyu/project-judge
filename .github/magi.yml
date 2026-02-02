@@ -4,7 +4,6 @@ version: 1
 # Provider 설정
 provider:
   type: gemini
-  # model: gemini-2.5-flash  # 기본값 사용
 
 # 투표 설정
 voting:
