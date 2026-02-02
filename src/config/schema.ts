@@ -59,6 +59,16 @@ export const DebateConfigSchema = z.object({
   revote_after_debate: z.boolean().default(true),
 });
 
+export const SlackConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  webhook_url: z.string().optional(),
+  notify_on: z.enum(["all", "rejection", "approval"]).default("all"),
+});
+
+export const NotificationsConfigSchema = z.object({
+  slack: SlackConfigSchema.optional(),
+});
+
 export const OptimizationConfigSchema = z.object({
   tiered_models: TieredModelsConfigSchema.optional(),
   context_caching: z.boolean().optional().default(true),
@@ -73,6 +83,7 @@ export const MagiConfigSchema = z.object({
   output: OutputConfigSchema.optional().default({}),
   optimization: OptimizationConfigSchema.optional().default({}),
   debate: DebateConfigSchema.optional().default({}),
+  notifications: NotificationsConfigSchema.optional(),
   ignore: z
     .object({
       files: z.array(z.string()).optional(),

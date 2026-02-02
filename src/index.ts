@@ -19,6 +19,7 @@ import {
   PRContext,
   runDebate,
 } from "./review";
+import { notifySlack } from "./notifications";
 
 /**
  * MAGI Review Action - Main Entry Point
@@ -33,6 +34,7 @@ async function run(): Promise<void> {
     const gcpLocation = core.getInput("gcp_location") || "us-central1";
     const openaiApiKey = core.getInput("openai_api_key");
     const anthropicApiKey = core.getInput("anthropic_api_key");
+    const slackWebhookUrl = core.getInput("slack_webhook_url");
     const configPath = core.getInput("config_path");
     const githubToken = process.env.GITHUB_TOKEN;
 
@@ -228,6 +230,30 @@ async function run(): Promise<void> {
         rejected: config.output?.labels?.rejected || "magi-changes-requested",
       });
       console.log("🏷️ Applied labels\n");
+    }
+
+    // 17. Slack 알림 (설정에 따라)
+    const slackConfig = config.notifications?.slack;
+    const webhookUrl = slackWebhookUrl || slackConfig?.webhook_url;
+
+    if (slackConfig?.enabled && webhookUrl) {
+      try {
+        const prUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/pull/${prNumber}`;
+        await notifySlack(
+          {
+            webhookUrl,
+            notifyOn: slackConfig.notify_on || "all",
+          },
+          prInfo.title,
+          prUrl,
+          prNumber,
+          reviews,
+          votingSummary,
+        );
+      } catch (slackError) {
+        // Slack 에러는 전체 액션 실패로 이어지지 않도록 경고만 출력
+        console.warn("⚠️ Slack notification failed:", slackError);
+      }
     }
 
     // 17. 출력 설정

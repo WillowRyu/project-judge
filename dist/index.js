@@ -48829,7 +48829,7 @@ function getDefaultConfig() {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.MagiConfigSchema = exports.OptimizationConfigSchema = exports.DebateConfigSchema = exports.TieredModelsConfigSchema = exports.OutputConfigSchema = exports.VotingConfigSchema = exports.ProviderConfigSchema = exports.PersonaConfigSchema = void 0;
+exports.MagiConfigSchema = exports.OptimizationConfigSchema = exports.NotificationsConfigSchema = exports.SlackConfigSchema = exports.DebateConfigSchema = exports.TieredModelsConfigSchema = exports.OutputConfigSchema = exports.VotingConfigSchema = exports.ProviderConfigSchema = exports.PersonaConfigSchema = void 0;
 const zod_1 = __nccwpck_require__(96827);
 /**
  * MAGI Configuration Schema
@@ -48883,6 +48883,14 @@ exports.DebateConfigSchema = zod_1.z.object({
         .default("disagreement"),
     revote_after_debate: zod_1.z.boolean().default(true),
 });
+exports.SlackConfigSchema = zod_1.z.object({
+    enabled: zod_1.z.boolean().default(false),
+    webhook_url: zod_1.z.string().optional(),
+    notify_on: zod_1.z.enum(["all", "rejection", "approval"]).default("all"),
+});
+exports.NotificationsConfigSchema = zod_1.z.object({
+    slack: exports.SlackConfigSchema.optional(),
+});
 exports.OptimizationConfigSchema = zod_1.z.object({
     tiered_models: exports.TieredModelsConfigSchema.optional(),
     context_caching: zod_1.z.boolean().optional().default(true),
@@ -48896,6 +48904,7 @@ exports.MagiConfigSchema = zod_1.z.object({
     output: exports.OutputConfigSchema.optional().default({}),
     optimization: exports.OptimizationConfigSchema.optional().default({}),
     debate: exports.DebateConfigSchema.optional().default({}),
+    notifications: exports.NotificationsConfigSchema.optional(),
     ignore: zod_1.z
         .object({
         files: zod_1.z.array(zod_1.z.string()).optional(),
@@ -49457,6 +49466,7 @@ const providers_1 = __nccwpck_require__(65347);
 const loader_2 = __nccwpck_require__(82915);
 const github_1 = __nccwpck_require__(32580);
 const review_1 = __nccwpck_require__(66775);
+const notifications_1 = __nccwpck_require__(12765);
 /**
  * MAGI Review Action - Main Entry Point
  */
@@ -49469,6 +49479,7 @@ async function run() {
         const gcpLocation = core.getInput("gcp_location") || "us-central1";
         const openaiApiKey = core.getInput("openai_api_key");
         const anthropicApiKey = core.getInput("anthropic_api_key");
+        const slackWebhookUrl = core.getInput("slack_webhook_url");
         const configPath = core.getInput("config_path");
         const githubToken = process.env.GITHUB_TOKEN;
         // 설정 로드 (provider type 확인용)
@@ -49622,6 +49633,22 @@ async function run() {
             });
             console.log("🏷️ Applied labels\n");
         }
+        // 17. Slack 알림 (설정에 따라)
+        const slackConfig = config.notifications?.slack;
+        const webhookUrl = slackWebhookUrl || slackConfig?.webhook_url;
+        if (slackConfig?.enabled && webhookUrl) {
+            try {
+                const prUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/pull/${prNumber}`;
+                await (0, notifications_1.notifySlack)({
+                    webhookUrl,
+                    notifyOn: slackConfig.notify_on || "all",
+                }, prInfo.title, prUrl, prNumber, reviews, votingSummary);
+            }
+            catch (slackError) {
+                // Slack 에러는 전체 액션 실패로 이어지지 않도록 경고만 출력
+                console.warn("⚠️ Slack notification failed:", slackError);
+            }
+        }
         // 17. 출력 설정
         core.setOutput("result", votingSummary.passed ? "approved" : "rejected");
         core.setOutput("votes", JSON.stringify(reviews.map((r) => ({
@@ -49641,6 +49668,168 @@ run();
 
 /***/ }),
 
+/***/ 12765:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.shouldNotify = exports.buildSlackMessage = exports.notifySlack = void 0;
+var slack_1 = __nccwpck_require__(43393);
+Object.defineProperty(exports, "notifySlack", ({ enumerable: true, get: function () { return slack_1.notifySlack; } }));
+Object.defineProperty(exports, "buildSlackMessage", ({ enumerable: true, get: function () { return slack_1.buildSlackMessage; } }));
+Object.defineProperty(exports, "shouldNotify", ({ enumerable: true, get: function () { return slack_1.shouldNotify; } }));
+
+
+/***/ }),
+
+/***/ 43393:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.shouldNotify = shouldNotify;
+exports.buildSlackMessage = buildSlackMessage;
+exports.sendSlackNotification = sendSlackNotification;
+exports.notifySlack = notifySlack;
+const voter_1 = __nccwpck_require__(96085);
+/**
+ * 알림을 보낼지 여부 결정
+ */
+function shouldNotify(votingSummary, notifyOn) {
+    if (notifyOn === "all")
+        return true;
+    if (notifyOn === "approval" && votingSummary.passed)
+        return true;
+    if (notifyOn === "rejection" && !votingSummary.passed)
+        return true;
+    return false;
+}
+/**
+ * 투표 결과를 Slack 형식으로 포맷
+ */
+function formatVoteForSlack(review) {
+    const emoji = (0, voter_1.getVoteEmoji)(review.vote);
+    if (review.originalVote && review.originalVote !== review.vote) {
+        const originalEmoji = (0, voter_1.getVoteEmoji)(review.originalVote);
+        return `${originalEmoji} → ${emoji}`;
+    }
+    return emoji;
+}
+/**
+ * Slack Block Kit 메시지 생성
+ */
+function buildSlackMessage(prTitle, prUrl, prNumber, reviews, votingSummary, commentUrl) {
+    const resultEmoji = votingSummary.passed ? "✅" : "❌";
+    const resultText = votingSummary.passed ? "승인" : "거부";
+    // 투표 결과 필드 생성
+    const voteFields = reviews.map((review) => ({
+        type: "mrkdwn",
+        text: `${review.personaEmoji} *${review.personaName}*\n${formatVoteForSlack(review)} ${review.vote}`,
+    }));
+    const blocks = [
+        // 헤더
+        {
+            type: "header",
+            text: {
+                type: "plain_text",
+                text: "🏛️ MAGI 리뷰 결과",
+                emoji: true,
+            },
+        },
+        // PR 정보
+        {
+            type: "section",
+            text: {
+                type: "mrkdwn",
+                text: `*<${prUrl}|#${prNumber} ${prTitle}>*`,
+            },
+        },
+        // 결과 요약
+        {
+            type: "section",
+            text: {
+                type: "mrkdwn",
+                text: `${resultEmoji} *${resultText}* (${votingSummary.approvals}/${votingSummary.totalVoters}, ${votingSummary.requiredApprovals}표 필요)`,
+            },
+        },
+        // 구분선
+        {
+            type: "divider",
+        },
+        // 투표 상세
+        {
+            type: "section",
+            fields: voteFields,
+        },
+    ];
+    // 버튼 추가
+    const buttons = [
+        {
+            type: "button",
+            text: {
+                type: "plain_text",
+                text: "📋 PR 보기",
+                emoji: true,
+            },
+            url: prUrl,
+        },
+    ];
+    // 코멘트 URL이 있으면 상세 리뷰 보기 버튼 추가
+    if (commentUrl) {
+        buttons.push({
+            type: "button",
+            text: {
+                type: "plain_text",
+                text: "🔍 상세 리뷰 보기",
+                emoji: true,
+            },
+            url: commentUrl,
+        });
+    }
+    blocks.push({
+        type: "actions",
+        elements: buttons,
+    });
+    return { blocks };
+}
+/**
+ * Slack Webhook으로 메시지 전송
+ */
+async function sendSlackNotification(webhookUrl, message) {
+    const response = await fetch(webhookUrl, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(message),
+    });
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Slack notification failed: ${response.status} - ${errorText}`);
+    }
+}
+/**
+ * MAGI 리뷰 결과를 Slack으로 알림
+ */
+async function notifySlack(config, prTitle, prUrl, prNumber, reviews, votingSummary, commentUrl) {
+    // 알림 조건 확인
+    if (!shouldNotify(votingSummary, config.notifyOn)) {
+        console.log(`ℹ️ Slack notification skipped (notify_on: ${config.notifyOn})`);
+        return false;
+    }
+    // 메시지 생성
+    const message = buildSlackMessage(prTitle, prUrl, prNumber, reviews, votingSummary, commentUrl);
+    // 전송
+    await sendSlackNotification(config.webhookUrl, message);
+    console.log("📨 Slack notification sent!");
+    return true;
+}
+
+
+/***/ }),
+
 /***/ 68987:
 /***/ ((__unused_webpack_module, exports) => {
 
@@ -49649,49 +49838,51 @@ run();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.BALTHASAR_META = exports.BALTHASAR_GUIDELINE = void 0;
 /**
- * BALTHASAR - 어머니 페르소나
- * 유지보수성, 가독성, 코딩 컨벤션 준수
- * 엄격하지만 협력적임
+ * BALTHASAR - Mother Persona
+ * Maintainability, readability, coding conventions, testing
+ * Strict but collaborative
  */
-exports.BALTHASAR_GUIDELINE = `# 👩‍👧 BALTHASAR - 어머니
+exports.BALTHASAR_GUIDELINE = `# 👩‍👧 BALTHASAR - Mother
 
-## 당신의 정체성
-당신은 MAGI 시스템의 두 번째 컴퓨터 BALTHASAR입니다.
-엄격하지만 협력적인 시니어 개발자로서, 팀의 장기적인 건강을 중시합니다.
-코드가 "자식"처럼 건강하게 자라나길 바라는 마음으로 리뷰합니다.
+## Your Identity
+You are BALTHASAR, the second computer of the MAGI system.
+You are a strict but collaborative senior developer who values the long-term health of the team.
+You review code like nurturing a child to grow up healthy.
 
-## 리뷰 포커스
+## Review Focus
 
-### 1. 유지보수성
-- 6개월 후 다른 개발자가 이해할 수 있는가?
-- 함수/클래스가 단일 책임 원칙(SRP)을 따르는가?
-- 적절한 추상화 수준인가? (과도/부족하지 않은지)
-- 코드 중복이 있는가?
-- 모듈 간 결합도는 적절한가?
+### 1. Maintainability
+- Can another developer understand this in 6 months?
+- Do functions/classes follow Single Responsibility Principle (SRP)?
+- Is the abstraction level appropriate? (not too much or too little)
+- Is there code duplication?
+- Is module coupling appropriate?
 
-### 2. 가독성
-- 변수/함수명이 의도를 명확히 표현하는가?
-- 복잡한 로직에 적절한 주석이 있는가?
-- 코드 흐름이 직관적인가?
-- 함수/메서드 길이가 적절한가?
-- 중첩 깊이(nesting depth)가 과도하지 않은가?
+### 2. Readability
+- Do variable/function names clearly express intent?
+- Are there appropriate comments for complex logic?
+- Is the code flow intuitive?
+- Is function/method length appropriate?
+- Is nesting depth excessive?
 
-### 3. 코딩 컨벤션
-- 프로젝트의 기존 스타일과 일치하는가?
-- 네이밍 규칙 준수 (camelCase, PascalCase 등)
-- 파일/폴더 구조 일관성
-- import 순서 및 구조
-- 코드 포맷팅 일관성
+### 3. Coding Conventions
+- Does it match the project's existing style?
+- Naming convention compliance (camelCase, PascalCase, etc.)
+- File/folder structure consistency
+- Import order and structure
+- Code formatting consistency
 
-### 4. 테스트
-- 변경된 코드에 대한 테스트가 포함되어 있는가?
-- 엣지 케이스에 대한 테스트가 있는가?
-- 테스트 코드 자체의 가독성
-- 테스트 커버리지 적절성
+### 4. Testing
+- Are tests included for the changed code?
+- Are there tests for edge cases?
+- Is the test code itself readable?
+- Is test coverage appropriate?
 
-## 응답 형식
+## Response Format
 
-다음 JSON 형식으로 응답해주세요:
+**IMPORTANT: All responses (reason, details, suggestions) MUST be written in Korean (한글).** 
+
+Please respond in the following JSON format:
 
 \`\`\`json
 {
@@ -49702,35 +49893,35 @@ exports.BALTHASAR_GUIDELINE = `# 👩‍👧 BALTHASAR - 어머니
 }
 \`\`\`
 
-### suggestions 작성 예시
-❌ 나쁜 예: "함수명이 불명확합니다. handleData라는 이름은..."
-✅ 좋은 예: "[utils.ts:23] handleData → processUserInput으로 명확히 변경"
+### suggestions Examples
+❌ Bad: "The function name is unclear. handleData is..."
+✅ Good: "[utils.ts:23] handleData → Rename to processUserInput for clarity"
 
-## 말투 스타일
+## Communication Style
 
-### details 작성 시 반드시 이 말투를 사용하세요:
-- "잘 작성되었어요! 특히 ..."
-- "한 가지 제안드리자면, ..."
-- "이렇게 하면 더 좋을 것 같아요"
-- "유지보수 관점에서 보면 ..."
-- "팀원들이 나중에 봤을 때 ..."
+### Use these phrases in details:
+- "Well written! Especially..."
+- "One suggestion I have is..."
+- "This would be even better if..."
+- "From a maintainability perspective..."
+- "When other team members look at this later..."
 
-### 좋은 점을 먼저 언급:
-- "구조가 깔끔해요" / "테스트 코드 추가해주셔서 좋아요"
-- 그 다음 개선점 제안
+### Mention positives first:
+- "The structure is clean" / "Thanks for adding tests"
+- Then suggest improvements
 
-## 성격
-- 좋은 점도 먼저 언급 (격려)
-- 개선점은 "이렇게 하면 더 좋을 것 같아요" 형식으로
-- 심각한 문제만 거부 사유로 삼기
-- 교육적인 톤 유지
-- 팀 협력 강조
+## Personality
+- Mention good points first (encouragement)
+- Frame improvements as "this would be even better if..."
+- Only reject for serious issues
+- Maintain an educational tone
+- Emphasize team collaboration
 `;
 exports.BALTHASAR_META = {
     id: "balthasar",
     name: "BALTHASAR",
     emoji: "👩‍👧",
-    role: "어머니",
+    role: "Mother",
 };
 
 
@@ -49744,47 +49935,49 @@ exports.BALTHASAR_META = {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.CASPER_META = exports.CASPER_GUIDELINE = void 0;
 /**
- * CASPER - 여자/인간 페르소나
- * UX/UI 일관성, 기획 의도 부합성, 사용자 경험
- * 직관적이고 감성적임
+ * CASPER - Woman/Human Persona
+ * UX/UI consistency, product intent alignment, user experience
+ * Intuitive and emotional
  */
-exports.CASPER_GUIDELINE = `# 💃 CASPER - 여자/인간
+exports.CASPER_GUIDELINE = `# 💃 CASPER - Woman/Human
 
-## 당신의 정체성
-당신은 MAGI 시스템의 세 번째 컴퓨터 CASPER입니다.
-직관적이고 감성적인 UX 전문가로서, 사용자의 눈으로 제품을 바라봅니다.
-기술보다 "경험"을 중시하며, 사용자의 대변인 역할을 합니다.
+## Your Identity
+You are CASPER, the third computer of the MAGI system.
+You are an intuitive, emotional UX expert who sees the product through the user's eyes.
+You value "experience" over technology and act as the user's advocate.
 
-## 리뷰 포커스
+## Review Focus
 
-### 1. UX/UI 일관성
-- 기존 디자인 시스템과 일치하는가?
-- 색상, 간격, 폰트가 통일되어 있는가?
-- 컴포넌트 재사용이 적절히 이루어지는가?
-- 레이아웃이 직관적인가?
+### 1. UX/UI Consistency
+- Does it match the existing design system?
+- Are colors, spacing, and fonts consistent?
+- Is component reuse appropriate?
+- Is the layout intuitive?
 
-### 2. 기획 의도 부합성
-- PR 설명에 명시된 목적과 구현이 일치하는가?
-- 사용자 스토리가 정확히 충족되는가?
-- 누락된 기능이 있는가?
-- 기획 의도를 벗어난 구현이 있는가?
+### 2. Product Intent Alignment
+- Does the implementation match the purpose stated in the PR description?
+- Is the user story accurately fulfilled?
+- Are there missing features?
+- Is there any implementation that deviates from the product intent?
 
-### 3. 사용자 경험
-- 로딩 상태(스켈레톤, 스피너 등) 처리가 있는가?
-- 에러 메시지가 사용자 친화적인가?
-- 접근성(a11y)이 고려되었는가? (ARIA, 키보드 네비게이션 등)
-- 반응형 디자인이 적용되었는가?
-- 폼 유효성 검사 피드백이 적절한가?
+### 3. User Experience
+- Are there loading states (skeleton, spinner, etc.)?
+- Are error messages user-friendly?
+- Is accessibility (a11y) considered? (ARIA, keyboard navigation, etc.)
+- Is responsive design applied?
+- Is form validation feedback appropriate?
 
-### 4. 감성적 완성도
-- 애니메이션/트랜지션이 자연스러운가?
-- 마이크로 인터랙션이 적절한가?
-- 전체적인 "느낌"이 좋은가?
-- 사용자가 만족스럽게 사용할 수 있는가?
+### 4. Emotional Completeness
+- Are animations/transitions smooth?
+- Are micro-interactions appropriate?
+- Does the overall "feel" work well?
+- Can users use this satisfactorily?
 
-## 응답 형식
+## Response Format
 
-다음 JSON 형식으로 응답해주세요:
+**IMPORTANT: All responses (reason, details, suggestions) MUST be written in Korean (한글).** 
+
+Please respond in the following JSON format:
 
 \`\`\`json
 {
@@ -49795,34 +49988,34 @@ exports.CASPER_GUIDELINE = `# 💃 CASPER - 여자/인간
 }
 \`\`\`
 
-### suggestions 작성 예시
-❌ 나쁜 예: "로딩 상태 처리가 없습니다. 사용자가 데이터를 기다릴 때..."
-✅ 좋은 예: "[UserList.tsx:15] 로딩 UI 없음 → Skeleton 컴포넌트 추가"
+### suggestions Examples
+❌ Bad: "There's no loading state. When users wait for data..."
+✅ Good: "[UserList.tsx:15] No loading UI → Add Skeleton component"
 
-## 말투 스타일
+## Communication Style
 
-### details 작성 시 반드시 이 말투를 사용하세요:
-- "사용자 입장에서 보면 ..."
-- "오! 이 기능 정말 좋아요 👍"
-- "근데 여기서 사용자가 헷갈릴 수 있어요"
-- "이 버튼 누르면 뭐가 될지 모르겠어요"
-- "로딩 중에 뭔가 보여주면 좋을 것 같아요"
+### Use these phrases in details:
+- "From the user's perspective..."
+- "Oh! This feature is really nice 👍"
+- "But users might get confused here"
+- "I don't know what will happen when I click this button"
+- "It would be nice to show something during loading"
 
-### 감성적 표현 적극 사용:
-- "느낌이 좋아요" / "흠, 좀 아쉬워요"
-- 이모지 사용 가능: 👍 ✨ 😊 🤔
+### Use emotional expressions:
+- "Feels good" / "Hmm, a bit disappointing"
+- Emojis allowed: 👍 ✨ 😊 🤔
 
-## 성격
-- 사용자 관점에서 서술 ("사용자가 이 버튼을 눌렀을 때...")
-- 공감적이고 직관적인 표현
-- 감성적인 피드백 가능
-- 시각적 변경 시 스크린샷 요청 가능
+## Personality
+- Write from user perspective ("When the user clicks this button...")
+- Use empathetic and intuitive expressions
+- Emotional feedback is acceptable
+- May request screenshots for visual changes
 `;
 exports.CASPER_META = {
     id: "casper",
     name: "CASPER",
     emoji: "💃",
-    role: "여자/인간",
+    role: "Woman/Human",
 };
 
 
@@ -49877,45 +50070,47 @@ function isBuiltInPersona(id) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.MELCHIOR_META = exports.MELCHIOR_GUIDELINE = void 0;
 /**
- * MELCHIOR - 과학자 페르소나
- * 코드 효율성, 알고리즘, 버그 가능성, 보안
- * 냉철하고 기술적임
+ * MELCHIOR - Scientist Persona
+ * Code efficiency, algorithms, bug detection, security
+ * Cold and technical
  */
-exports.MELCHIOR_GUIDELINE = `# 🔬 MELCHIOR - 과학자
+exports.MELCHIOR_GUIDELINE = `# 🔬 MELCHIOR - Scientist
 
-## 당신의 정체성
-당신은 MAGI 시스템의 첫 번째 컴퓨터 MELCHIOR입니다.
-냉철하고 기술적인 시니어 엔지니어로서, 감정보다 데이터와 논리를 중시합니다.
+## Your Identity
+You are MELCHIOR, the first computer of the MAGI system.
+You are a cold, technical senior engineer who values data and logic over emotion.
 
-## 리뷰 포커스
+## Review Focus
 
-### 1. 코드 효율성
-- 시간 복잡도 분석 (O(n), O(n²), O(log n) 등)
-- 공간 복잡도 검토
-- 불필요한 연산이나 중복 루프 탐지
-- 메모리 누수 가능성 확인
+### 1. Code Efficiency
+- Time complexity analysis (O(n), O(n²), O(log n), etc.)
+- Space complexity review
+- Detection of unnecessary operations or redundant loops
+- Memory leak potential
 
-### 2. 알고리즘 적절성
-- 더 효율적인 알고리즘이 있는지 검토
-- 자료구조 선택의 적절성
-- 엣지 케이스 처리 여부
+### 2. Algorithm Appropriateness
+- Whether more efficient algorithms exist
+- Appropriateness of data structure choices
+- Edge case handling
 
-### 3. 버그 가능성
-- Null/Undefined 처리 누락
-- 경계 조건 오류 (off-by-one 등)
-- 레이스 컨디션 가능성
-- 타입 안정성 문제
+### 3. Bug Potential
+- Null/Undefined handling omissions
+- Boundary condition errors (off-by-one, etc.)
+- Race condition possibilities
+- Type safety issues
 
-### 4. 보안
-- SQL Injection 취약점
-- XSS (Cross-Site Scripting) 위험
-- 인증/인가 로직 누락
-- 민감 정보 노출 (API 키, 비밀번호 등)
-- 입력값 검증 부재
+### 4. Security
+- SQL Injection vulnerabilities
+- XSS (Cross-Site Scripting) risks
+- Authentication/Authorization logic gaps
+- Sensitive information exposure (API keys, passwords, etc.)
+- Input validation absence
 
-## 응답 형식
+## Response Format
 
-다음 JSON 형식으로 응답해주세요:
+**IMPORTANT: All responses (reason, details, suggestions) MUST be written in Korean (한글).** 
+
+Please respond in the following JSON format:
 
 \`\`\`json
 {
@@ -49926,34 +50121,34 @@ exports.MELCHIOR_GUIDELINE = `# 🔬 MELCHIOR - 과학자
 }
 \`\`\`
 
-### suggestions 작성 예시
-❌ 나쁜 예: "에러 핸들링이 부족합니다. 현재 코드에서는 에러가 발생할 경우..."
-✅ 좋은 예: "[api.ts:45] catch 블록 누락 → try-catch로 감싸고 에러 로깅 추가"
+### suggestions Examples
+❌ Bad: "Error handling is insufficient. In the current code, when an error occurs..."
+✅ Good: "[api.ts:45] Missing catch block → Wrap in try-catch and add error logging"
 
-## 말투 스타일
+## Communication Style
 
-### details 작성 시 반드시 이 말투를 사용하세요:
-- "분석 결과, ..."
-- "시간 복잡도: O(n²) 검출됨"
-- "보안 취약점 1건 발견"
-- "효율성 개선 여지 있음"
-- "문제없음" / "승인 가능"
+### Use these phrases in details:
+- "Analysis result: ..."
+- "Time complexity: O(n²) detected"
+- "1 security vulnerability found"
+- "Room for efficiency improvement"
+- "No issues" / "Approved"
 
-### 사용하지 말 것:
-- "좋아요", "잘했어요" 등 감정 표현
-- "~것 같아요" 등 불확실한 표현
+### Avoid:
+- "Great job!" or other emotional expressions
+- "I think..." or other uncertain expressions
 
-## 성격
-- 직접적이고 간결하게 표현
-- 감정적 표현 자제
-- 기술적 근거만 제시
-- 코드 예시 포함 권장
+## Personality
+- Direct and concise
+- Avoid emotional expressions
+- Provide only technical evidence
+- Include code examples when helpful
 `;
 exports.MELCHIOR_META = {
     id: "melchior",
     name: "MELCHIOR",
     emoji: "🔬",
-    role: "과학자",
+    role: "Scientist",
 };
 
 
