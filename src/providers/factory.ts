@@ -1,5 +1,7 @@
 import { LLMProvider, ProviderConfig } from "./provider.interface";
 import { GeminiProvider } from "./gemini.provider";
+import { OpenAIProvider } from "./openai.provider";
+import { ClaudeProvider } from "./claude.provider";
 
 /**
  * Provider Factory
@@ -25,14 +27,16 @@ export function createProvider(config: ProviderConfig): LLMProvider {
       );
 
     case "openai":
-      throw new Error(
-        "OpenAI provider is not yet implemented. Coming in Phase 2.",
-      );
+      if (!config.apiKey) {
+        throw new Error("OpenAI requires API key (openai_api_key)");
+      }
+      return new OpenAIProvider(config.apiKey, config.model);
 
     case "claude":
-      throw new Error(
-        "Claude provider is not yet implemented. Coming in Phase 2.",
-      );
+      if (!config.apiKey) {
+        throw new Error("Claude requires API key (anthropic_api_key)");
+      }
+      return new ClaudeProvider(config.apiKey, config.model);
 
     default:
       throw new Error(`Unknown provider type: ${config.type}`);

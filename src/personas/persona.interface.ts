@@ -21,6 +21,7 @@ export interface ReviewResult {
   reason: string;
   details: string;
   suggestions?: string[];
+  debateResponse?: string; // 토론 응답 (토론 후 추가됨)
 }
 
 export interface VotingSummary {

@@ -6,6 +6,63 @@ import { getVoteEmoji, getVoteResultString } from "../review/voter";
  * PR에 작성할 리뷰 코멘트 마크다운 생성
  */
 
+/**
+ * LLM 응답의 details를 마크다운으로 포맷팅
+ * JSON 형태로 반환된 경우 읽기 쉬운 형태로 변환
+ */
+function formatReviewDetails(details: string): string {
+  // 이미 마크다운 형식이면 그대로 반환
+  if (!details.trim().startsWith("{") && !details.trim().startsWith("[")) {
+    return details;
+  }
+
+  // JSON 형식인 경우 파싱 시도
+  try {
+    const parsed = JSON.parse(details);
+
+    // 객체를 마크다운으로 변환
+    return formatObjectAsMarkdown(parsed);
+  } catch {
+    // 파싱 실패 시 코드 블록으로 감싸서 표시
+    return `\`\`\`json\n${details}\n\`\`\``;
+  }
+}
+
+/**
+ * 객체를 마크다운으로 변환
+ */
+function formatObjectAsMarkdown(
+  obj: Record<string, unknown>,
+  depth = 0,
+): string {
+  const lines: string[] = [];
+  const indent = "  ".repeat(depth);
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (Array.isArray(value)) {
+      lines.push(`${indent}**${key}:**`);
+      for (const item of value) {
+        if (typeof item === "string") {
+          lines.push(`${indent}- ${item}`);
+        } else if (typeof item === "object" && item !== null) {
+          lines.push(
+            formatObjectAsMarkdown(item as Record<string, unknown>, depth + 1),
+          );
+        }
+      }
+    } else if (typeof value === "object" && value !== null) {
+      lines.push(`${indent}**${key}:**`);
+      lines.push(
+        formatObjectAsMarkdown(value as Record<string, unknown>, depth + 1),
+      );
+    } else {
+      lines.push(`${indent}**${key}:** ${value}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 export interface CommentOptions {
   style: "summary" | "detailed";
   includeActionItems: boolean;
@@ -54,8 +111,18 @@ export function generateComment(
       lines.push(""); // 빈 줄 추가로 가독성 향상
       lines.push("<br>\n"); // 추가 간격
 
+      // 코드 리뷰 내용 (details가 JSON이면 포맷팅)
       if (review.details) {
-        lines.push(review.details);
+        const formattedDetails = formatReviewDetails(review.details);
+        lines.push(`### 🔍 코드 리뷰: ${review.personaName}\n`);
+        lines.push(formattedDetails);
+      }
+
+      // 토론 응답이 있으면 표시
+      if (review.debateResponse) {
+        lines.push("\n---\n");
+        lines.push(`### 🗣️ 토론 의견\n`);
+        lines.push(`> ${review.debateResponse}\n`);
       }
 
       lines.push("\n</details>\n");
