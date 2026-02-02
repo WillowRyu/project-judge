@@ -49023,9 +49023,19 @@ function mapFileStatus(status) {
 }
 /**
  * PR 번호 가져오기 (GitHub Context에서)
+ * pull_request 이벤트와 issue_comment 이벤트 모두 지원
  */
 function getPullRequestNumber() {
-    return github.context.payload.pull_request?.number;
+    // pull_request 이벤트인 경우
+    if (github.context.payload.pull_request?.number) {
+        return github.context.payload.pull_request.number;
+    }
+    // issue_comment 이벤트인 경우 (PR에 달린 코멘트)
+    if (github.context.payload.issue?.pull_request &&
+        github.context.payload.issue?.number) {
+        return github.context.payload.issue.number;
+    }
+    return undefined;
 }
 /**
  * GitHub Actions 환경인지 확인

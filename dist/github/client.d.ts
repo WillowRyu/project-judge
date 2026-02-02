@@ -33,6 +33,7 @@ export declare function getPullRequest(client: GitHubClient, prNumber: number): 
 export declare function getPullRequestFiles(client: GitHubClient, prNumber: number): Promise<FileDiff[]>;
 /**
  * PR 번호 가져오기 (GitHub Context에서)
+ * pull_request 이벤트와 issue_comment 이벤트 모두 지원
  */
 export declare function getPullRequestNumber(): number | undefined;
 /**
