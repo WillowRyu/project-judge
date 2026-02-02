@@ -17,6 +17,7 @@ import {
   runReviews,
   countVotesWithConfig,
   PRContext,
+  runDebate,
 } from "./review";
 
 /**
@@ -30,18 +31,45 @@ async function run(): Promise<void> {
     const geminiApiKey = core.getInput("gemini_api_key");
     const gcpProjectId = core.getInput("gcp_project_id");
     const gcpLocation = core.getInput("gcp_location") || "us-central1";
+    const openaiApiKey = core.getInput("openai_api_key");
+    const anthropicApiKey = core.getInput("anthropic_api_key");
     const configPath = core.getInput("config_path");
     const githubToken = process.env.GITHUB_TOKEN;
 
-    // 인증 방식 확인
-    if (!geminiApiKey && !gcpProjectId) {
+    // 설정 로드 (provider type 확인용)
+    const workspacePath = process.env.GITHUB_WORKSPACE || process.cwd();
+    const config = await loadConfig(workspacePath, configPath);
+    const providerType = config.provider?.type || "gemini";
+
+    // 인증 방식 확인 (선택된 provider에 따라)
+    const hasValidAuth = (() => {
+      switch (providerType) {
+        case "openai":
+          return !!openaiApiKey;
+        case "claude":
+          return !!anthropicApiKey;
+        case "gemini":
+        default:
+          return !!geminiApiKey || !!gcpProjectId;
+      }
+    })();
+
+    if (!hasValidAuth) {
       throw new Error(
-        "Either gemini_api_key or gcp_project_id is required for authentication",
+        `Missing API key for provider "${providerType}". ` +
+          `Required: ${
+            providerType === "openai"
+              ? "openai_api_key"
+              : providerType === "claude"
+                ? "anthropic_api_key"
+                : "gemini_api_key or gcp_project_id"
+          }`,
       );
     }
 
-    const authMode = gcpProjectId ? "GCP Vertex AI" : "API Key";
-    console.log(`🔐 Authentication Mode: ${authMode}\n`);
+    const authMode =
+      providerType === "gemini" && gcpProjectId ? "GCP Vertex AI" : "API Key";
+    console.log(`🔐 Authentication Mode: ${authMode} (${providerType})\n`);
 
     if (!githubToken) {
       throw new Error(
@@ -60,9 +88,7 @@ async function run(): Promise<void> {
     // 3. GitHub 클라이언트 생성
     const githubClient = createGitHubClient(githubToken);
 
-    // 4. 설정 로드
-    const workspacePath = process.env.GITHUB_WORKSPACE || process.cwd();
-    const config = await loadConfig(workspacePath, configPath);
+    // 4. 설정은 위에서 이미 로드됨
     console.log("✅ Configuration loaded\n");
 
     // 5. PR 정보 조회
@@ -97,10 +123,22 @@ async function run(): Promise<void> {
     console.log(`   +${analyzedDiff.totalAdditions} additions`);
     console.log(`   -${analyzedDiff.totalDeletions} deletions\n`);
 
-    // 9. LLM Provider 생성
+    // 9. LLM Provider 생성 (provider type에 따라 적절한 API key 사용)
+    const apiKeyForProvider = (() => {
+      switch (providerType) {
+        case "openai":
+          return openaiApiKey;
+        case "claude":
+          return anthropicApiKey;
+        case "gemini":
+        default:
+          return geminiApiKey;
+      }
+    })();
+
     const provider = createProvider({
-      type: config.provider?.type || "gemini",
-      apiKey: geminiApiKey || undefined,
+      type: providerType,
+      apiKey: apiKeyForProvider || undefined,
       gcpProjectId: gcpProjectId || undefined,
       gcpLocation: gcpLocation,
       model: config.provider?.model,
@@ -130,11 +168,21 @@ async function run(): Promise<void> {
 
     // 12. 리뷰 실행 (토큰 최적화 옵션 적용)
     console.log("🔍 Running reviews...\n");
-    const reviews = await runReviews(provider, personas, prContext, {
+    let reviews = await runReviews(provider, personas, prContext, {
       enableCaching: config.optimization?.context_caching ?? true,
       enableCompression: config.optimization?.prompt_compression ?? true,
       tieredModels: config.optimization?.tiered_models,
     });
+
+    // 12-1. 토론 실행 (설정에 따라)
+    if (config.debate?.enabled) {
+      reviews = await runDebate(provider, personas, reviews, prContext, {
+        enabled: config.debate.enabled,
+        maxRounds: config.debate.max_rounds ?? 1,
+        trigger: config.debate.trigger ?? "disagreement",
+        revoteAfterDebate: config.debate.revote_after_debate ?? true,
+      });
+    }
 
     // 13. 투표 집계
     const votingSummary = countVotesWithConfig(reviews, {

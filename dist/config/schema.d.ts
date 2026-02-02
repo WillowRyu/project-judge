@@ -11,10 +11,12 @@ export declare const PersonaConfigSchema: z.ZodObject<{
     guideline_file: z.ZodOptional<z.ZodString>;
     builtin: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
     model: z.ZodOptional<z.ZodString>;
+    provider: z.ZodOptional<z.ZodEnum<["gemini", "openai", "claude"]>>;
 }, "strip", z.ZodTypeAny, {
     id: string;
     builtin: boolean;
     model?: string | undefined;
+    provider?: "gemini" | "openai" | "claude" | undefined;
     name?: string | undefined;
     emoji?: string | undefined;
     role?: string | undefined;
@@ -22,6 +24,7 @@ export declare const PersonaConfigSchema: z.ZodObject<{
 }, {
     id: string;
     model?: string | undefined;
+    provider?: "gemini" | "openai" | "claude" | undefined;
     name?: string | undefined;
     emoji?: string | undefined;
     role?: string | undefined;
@@ -106,6 +109,22 @@ export declare const TieredModelsConfigSchema: z.ZodObject<{
     medium?: string | undefined;
     large?: string | undefined;
 }>;
+export declare const DebateConfigSchema: z.ZodObject<{
+    enabled: z.ZodDefault<z.ZodBoolean>;
+    max_rounds: z.ZodDefault<z.ZodNumber>;
+    trigger: z.ZodDefault<z.ZodEnum<["conflict", "disagreement", "always"]>>;
+    revote_after_debate: z.ZodDefault<z.ZodBoolean>;
+}, "strip", z.ZodTypeAny, {
+    enabled: boolean;
+    max_rounds: number;
+    trigger: "conflict" | "disagreement" | "always";
+    revote_after_debate: boolean;
+}, {
+    enabled?: boolean | undefined;
+    max_rounds?: number | undefined;
+    trigger?: "conflict" | "disagreement" | "always" | undefined;
+    revote_after_debate?: boolean | undefined;
+}>;
 export declare const OptimizationConfigSchema: z.ZodObject<{
     tiered_models: z.ZodOptional<z.ZodObject<{
         small: z.ZodOptional<z.ZodString>;
@@ -169,10 +188,12 @@ export declare const MagiConfigSchema: z.ZodObject<{
         guideline_file: z.ZodOptional<z.ZodString>;
         builtin: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
         model: z.ZodOptional<z.ZodString>;
+        provider: z.ZodOptional<z.ZodEnum<["gemini", "openai", "claude"]>>;
     }, "strip", z.ZodTypeAny, {
         id: string;
         builtin: boolean;
         model?: string | undefined;
+        provider?: "gemini" | "openai" | "claude" | undefined;
         name?: string | undefined;
         emoji?: string | undefined;
         role?: string | undefined;
@@ -180,6 +201,7 @@ export declare const MagiConfigSchema: z.ZodObject<{
     }, {
         id: string;
         model?: string | undefined;
+        provider?: "gemini" | "openai" | "claude" | undefined;
         name?: string | undefined;
         emoji?: string | undefined;
         role?: string | undefined;
@@ -264,6 +286,22 @@ export declare const MagiConfigSchema: z.ZodObject<{
         context_caching?: boolean | undefined;
         prompt_compression?: boolean | undefined;
     }>>>;
+    debate: z.ZodDefault<z.ZodOptional<z.ZodObject<{
+        enabled: z.ZodDefault<z.ZodBoolean>;
+        max_rounds: z.ZodDefault<z.ZodNumber>;
+        trigger: z.ZodDefault<z.ZodEnum<["conflict", "disagreement", "always"]>>;
+        revote_after_debate: z.ZodDefault<z.ZodBoolean>;
+    }, "strip", z.ZodTypeAny, {
+        enabled: boolean;
+        max_rounds: number;
+        trigger: "conflict" | "disagreement" | "always";
+        revote_after_debate: boolean;
+    }, {
+        enabled?: boolean | undefined;
+        max_rounds?: number | undefined;
+        trigger?: "conflict" | "disagreement" | "always" | undefined;
+        revote_after_debate?: boolean | undefined;
+    }>>>;
     ignore: z.ZodOptional<z.ZodObject<{
         files: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         paths: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
@@ -304,10 +342,17 @@ export declare const MagiConfigSchema: z.ZodObject<{
             large?: string | undefined;
         } | undefined;
     };
+    debate: {
+        enabled: boolean;
+        max_rounds: number;
+        trigger: "conflict" | "disagreement" | "always";
+        revote_after_debate: boolean;
+    };
     personas?: {
         id: string;
         builtin: boolean;
         model?: string | undefined;
+        provider?: "gemini" | "openai" | "claude" | undefined;
         name?: string | undefined;
         emoji?: string | undefined;
         role?: string | undefined;
@@ -330,6 +375,7 @@ export declare const MagiConfigSchema: z.ZodObject<{
     personas?: {
         id: string;
         model?: string | undefined;
+        provider?: "gemini" | "openai" | "claude" | undefined;
         name?: string | undefined;
         emoji?: string | undefined;
         role?: string | undefined;
@@ -356,6 +402,12 @@ export declare const MagiConfigSchema: z.ZodObject<{
         context_caching?: boolean | undefined;
         prompt_compression?: boolean | undefined;
     } | undefined;
+    debate?: {
+        enabled?: boolean | undefined;
+        max_rounds?: number | undefined;
+        trigger?: "conflict" | "disagreement" | "always" | undefined;
+        revote_after_debate?: boolean | undefined;
+    } | undefined;
     ignore?: {
         files?: string[] | undefined;
         paths?: string[] | undefined;
@@ -366,4 +418,5 @@ export type PersonaConfig = z.infer<typeof PersonaConfigSchema>;
 export type ProviderConfigType = z.infer<typeof ProviderConfigSchema>;
 export type VotingConfig = z.infer<typeof VotingConfigSchema>;
 export type OutputConfig = z.infer<typeof OutputConfigSchema>;
+export type DebateConfig = z.infer<typeof DebateConfigSchema>;
 //# sourceMappingURL=schema.d.ts.map

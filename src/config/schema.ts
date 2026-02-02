@@ -12,7 +12,8 @@ export const PersonaConfigSchema = z.object({
   role: z.string().optional(),
   guideline_file: z.string().optional(),
   builtin: z.boolean().optional().default(true),
-  model: z.string().optional(), // 페르소나별 모델 (예: gemini-3-pro, gemini-2.5-flash-lite)
+  model: z.string().optional(), // 페르소나별 모델 (예: gemini-3-pro, gpt-5.2)
+  provider: z.enum(["gemini", "openai", "claude"]).optional(), // 페르소나별 provider
 });
 
 export const ProviderConfigSchema = z.object({
@@ -49,6 +50,15 @@ export const TieredModelsConfigSchema = z.object({
   large: z.string().optional(), // 100줄+ (기본: GCP=gemini-3-pro-preview, API=gemini-2.5-pro)
 });
 
+export const DebateConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  max_rounds: z.number().default(1),
+  trigger: z
+    .enum(["conflict", "disagreement", "always"])
+    .default("disagreement"),
+  revote_after_debate: z.boolean().default(true),
+});
+
 export const OptimizationConfigSchema = z.object({
   tiered_models: TieredModelsConfigSchema.optional(),
   context_caching: z.boolean().optional().default(true),
@@ -62,6 +72,7 @@ export const MagiConfigSchema = z.object({
   personas: z.array(PersonaConfigSchema).optional(),
   output: OutputConfigSchema.optional().default({}),
   optimization: OptimizationConfigSchema.optional().default({}),
+  debate: DebateConfigSchema.optional().default({}),
   ignore: z
     .object({
       files: z.array(z.string()).optional(),
@@ -75,3 +86,4 @@ export type PersonaConfig = z.infer<typeof PersonaConfigSchema>;
 export type ProviderConfigType = z.infer<typeof ProviderConfigSchema>;
 export type VotingConfig = z.infer<typeof VotingConfigSchema>;
 export type OutputConfig = z.infer<typeof OutputConfigSchema>;
+export type DebateConfig = z.infer<typeof DebateConfigSchema>;

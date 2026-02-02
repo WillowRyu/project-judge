@@ -15,10 +15,15 @@
 
 ## 🚀 빠른 시작
 
-### Option 1: API Key (개인/테스트용)
+3가지 LLM Provider 중 선택하여 사용할 수 있습니다:
 
-1. [Google AI Studio](https://aistudio.google.com/apikey)에서 API 키 발급
-2. GitHub Secrets에 `GEMINI_API_KEY` 등록
+| Provider   | 기본 모델                    | 환경변수                               |
+| :--------- | :--------------------------- | :------------------------------------- |
+| **Gemini** | `gemini-2.5-flash`           | `GEMINI_API_KEY` 또는 `GCP_PROJECT_ID` |
+| **OpenAI** | `gpt-5.2`                    | `OPENAI_API_KEY`                       |
+| **Claude** | `claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY`                    |
+
+### Option 1: Gemini (기본)
 
 ```yaml
 - uses: your-org/magi-review@v1
@@ -28,11 +33,43 @@
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-### Option 2: GCP Vertex AI (엔터프라이즈용)
+### Option 2: OpenAI (GPT-5)
 
-1. GCP 프로젝트에서 Vertex AI API 활성화
-2. Service Account 생성 및 권한 부여 (`Vertex AI User`)
-3. GitHub Secrets에 Service Account JSON 등록
+```yaml
+- uses: your-org/magi-review@v1
+  with:
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+`.github/magi.yml`에서 provider 설정:
+
+```yaml
+provider:
+  type: openai
+  model: gpt-5.2 # optional
+```
+
+### Option 3: Claude (Anthropic)
+
+```yaml
+- uses: your-org/magi-review@v1
+  with:
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+`.github/magi.yml`에서 provider 설정:
+
+```yaml
+provider:
+  type: claude
+  model: claude-sonnet-4-5-20250929 # optional
+```
+
+### Option 4: GCP Vertex AI (엔터프라이즈용)
 
 ```yaml
 - uses: google-github-actions/auth@v2
@@ -42,7 +79,6 @@
 - uses: your-org/magi-review@v1
   with:
     gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
-    gcp_location: us-central1 # optional, default: us-central1
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -81,10 +117,10 @@ jobs:
 ```yaml
 version: 1
 
-# 모델 설정
+# Provider 설정 (gemini | openai | claude)
 provider:
-  type: gemini
-  model: gemini-2.0-flash
+  type: gemini # 또는 openai, claude
+  model: gemini-2.5-flash # optional
 
 # 투표 설정
 voting:
@@ -111,6 +147,26 @@ ignore:
 ```
 
 ## 🎨 페르소나 커스터마이징
+
+### 페르소나별 Provider 지정
+
+각 페르소나마다 다른 LLM Provider와 모델을 사용할 수 있습니다:
+
+```yaml
+# .github/magi.yml
+personas:
+  - id: melchior
+    provider: openai
+    model: gpt-5.2-pro
+  - id: balthasar
+    provider: claude
+    model: claude-opus-4-5-20251101
+  - id: casper
+    provider: gemini
+    model: gemini-2.5-flash
+```
+
+> **Note:** 페르소나별 provider를 사용하려면 해당 API key를 모두 설정해야 합니다.
 
 ### 공통 지침 추가
 
@@ -166,7 +222,7 @@ project-judge/
 ├── src/
 │   ├── index.ts              # 메인 엔트리포인트
 │   ├── config/               # 설정 로더 & 스키마
-│   ├── providers/            # LLM Provider (Gemini 등)
+│   ├── providers/            # LLM Provider (Gemini, OpenAI, Claude)
 │   ├── personas/             # 페르소나 & 지침
 │   │   └── built-in/         # 내장 기본 지침
 │   ├── review/               # 리뷰 엔진
