@@ -48829,7 +48829,7 @@ function getDefaultConfig() {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.MagiConfigSchema = exports.OptimizationConfigSchema = exports.DebateConfigSchema = exports.TieredModelsConfigSchema = exports.OutputConfigSchema = exports.VotingConfigSchema = exports.ProviderConfigSchema = exports.PersonaConfigSchema = void 0;
+exports.MagiConfigSchema = exports.OptimizationConfigSchema = exports.NotificationsConfigSchema = exports.SlackConfigSchema = exports.DebateConfigSchema = exports.TieredModelsConfigSchema = exports.OutputConfigSchema = exports.VotingConfigSchema = exports.ProviderConfigSchema = exports.PersonaConfigSchema = void 0;
 const zod_1 = __nccwpck_require__(96827);
 /**
  * MAGI Configuration Schema
@@ -48883,6 +48883,14 @@ exports.DebateConfigSchema = zod_1.z.object({
         .default("disagreement"),
     revote_after_debate: zod_1.z.boolean().default(true),
 });
+exports.SlackConfigSchema = zod_1.z.object({
+    enabled: zod_1.z.boolean().default(false),
+    webhook_url: zod_1.z.string().optional(),
+    notify_on: zod_1.z.enum(["all", "rejection", "approval"]).default("all"),
+});
+exports.NotificationsConfigSchema = zod_1.z.object({
+    slack: exports.SlackConfigSchema.optional(),
+});
 exports.OptimizationConfigSchema = zod_1.z.object({
     tiered_models: exports.TieredModelsConfigSchema.optional(),
     context_caching: zod_1.z.boolean().optional().default(true),
@@ -48896,6 +48904,7 @@ exports.MagiConfigSchema = zod_1.z.object({
     output: exports.OutputConfigSchema.optional().default({}),
     optimization: exports.OptimizationConfigSchema.optional().default({}),
     debate: exports.DebateConfigSchema.optional().default({}),
+    notifications: exports.NotificationsConfigSchema.optional(),
     ignore: zod_1.z
         .object({
         files: zod_1.z.array(zod_1.z.string()).optional(),
@@ -49457,6 +49466,7 @@ const providers_1 = __nccwpck_require__(65347);
 const loader_2 = __nccwpck_require__(82915);
 const github_1 = __nccwpck_require__(32580);
 const review_1 = __nccwpck_require__(66775);
+const notifications_1 = __nccwpck_require__(12765);
 /**
  * MAGI Review Action - Main Entry Point
  */
@@ -49469,6 +49479,7 @@ async function run() {
         const gcpLocation = core.getInput("gcp_location") || "us-central1";
         const openaiApiKey = core.getInput("openai_api_key");
         const anthropicApiKey = core.getInput("anthropic_api_key");
+        const slackWebhookUrl = core.getInput("slack_webhook_url");
         const configPath = core.getInput("config_path");
         const githubToken = process.env.GITHUB_TOKEN;
         // 설정 로드 (provider type 확인용)
@@ -49622,6 +49633,22 @@ async function run() {
             });
             console.log("🏷️ Applied labels\n");
         }
+        // 17. Slack 알림 (설정에 따라)
+        const slackConfig = config.notifications?.slack;
+        const webhookUrl = slackWebhookUrl || slackConfig?.webhook_url;
+        if (slackConfig?.enabled && webhookUrl) {
+            try {
+                const prUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/pull/${prNumber}`;
+                await (0, notifications_1.notifySlack)({
+                    webhookUrl,
+                    notifyOn: slackConfig.notify_on || "all",
+                }, prInfo.title, prUrl, prNumber, reviews, votingSummary);
+            }
+            catch (slackError) {
+                // Slack 에러는 전체 액션 실패로 이어지지 않도록 경고만 출력
+                console.warn("⚠️ Slack notification failed:", slackError);
+            }
+        }
         // 17. 출력 설정
         core.setOutput("result", votingSummary.passed ? "approved" : "rejected");
         core.setOutput("votes", JSON.stringify(reviews.map((r) => ({
@@ -49637,6 +49664,168 @@ async function run() {
     }
 }
 run();
+
+
+/***/ }),
+
+/***/ 12765:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.shouldNotify = exports.buildSlackMessage = exports.notifySlack = void 0;
+var slack_1 = __nccwpck_require__(43393);
+Object.defineProperty(exports, "notifySlack", ({ enumerable: true, get: function () { return slack_1.notifySlack; } }));
+Object.defineProperty(exports, "buildSlackMessage", ({ enumerable: true, get: function () { return slack_1.buildSlackMessage; } }));
+Object.defineProperty(exports, "shouldNotify", ({ enumerable: true, get: function () { return slack_1.shouldNotify; } }));
+
+
+/***/ }),
+
+/***/ 43393:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.shouldNotify = shouldNotify;
+exports.buildSlackMessage = buildSlackMessage;
+exports.sendSlackNotification = sendSlackNotification;
+exports.notifySlack = notifySlack;
+const voter_1 = __nccwpck_require__(96085);
+/**
+ * 알림을 보낼지 여부 결정
+ */
+function shouldNotify(votingSummary, notifyOn) {
+    if (notifyOn === "all")
+        return true;
+    if (notifyOn === "approval" && votingSummary.passed)
+        return true;
+    if (notifyOn === "rejection" && !votingSummary.passed)
+        return true;
+    return false;
+}
+/**
+ * 투표 결과를 Slack 형식으로 포맷
+ */
+function formatVoteForSlack(review) {
+    const emoji = (0, voter_1.getVoteEmoji)(review.vote);
+    if (review.originalVote && review.originalVote !== review.vote) {
+        const originalEmoji = (0, voter_1.getVoteEmoji)(review.originalVote);
+        return `${originalEmoji} → ${emoji}`;
+    }
+    return emoji;
+}
+/**
+ * Slack Block Kit 메시지 생성
+ */
+function buildSlackMessage(prTitle, prUrl, prNumber, reviews, votingSummary, commentUrl) {
+    const resultEmoji = votingSummary.passed ? "✅" : "❌";
+    const resultText = votingSummary.passed ? "승인" : "거부";
+    // 투표 결과 필드 생성
+    const voteFields = reviews.map((review) => ({
+        type: "mrkdwn",
+        text: `${review.personaEmoji} *${review.personaName}*\n${formatVoteForSlack(review)} ${review.vote}`,
+    }));
+    const blocks = [
+        // 헤더
+        {
+            type: "header",
+            text: {
+                type: "plain_text",
+                text: "🏛️ MAGI 리뷰 결과",
+                emoji: true,
+            },
+        },
+        // PR 정보
+        {
+            type: "section",
+            text: {
+                type: "mrkdwn",
+                text: `*<${prUrl}|#${prNumber} ${prTitle}>*`,
+            },
+        },
+        // 결과 요약
+        {
+            type: "section",
+            text: {
+                type: "mrkdwn",
+                text: `${resultEmoji} *${resultText}* (${votingSummary.approvals}/${votingSummary.totalVoters}, ${votingSummary.requiredApprovals}표 필요)`,
+            },
+        },
+        // 구분선
+        {
+            type: "divider",
+        },
+        // 투표 상세
+        {
+            type: "section",
+            fields: voteFields,
+        },
+    ];
+    // 버튼 추가
+    const buttons = [
+        {
+            type: "button",
+            text: {
+                type: "plain_text",
+                text: "📋 PR 보기",
+                emoji: true,
+            },
+            url: prUrl,
+        },
+    ];
+    // 코멘트 URL이 있으면 상세 리뷰 보기 버튼 추가
+    if (commentUrl) {
+        buttons.push({
+            type: "button",
+            text: {
+                type: "plain_text",
+                text: "🔍 상세 리뷰 보기",
+                emoji: true,
+            },
+            url: commentUrl,
+        });
+    }
+    blocks.push({
+        type: "actions",
+        elements: buttons,
+    });
+    return { blocks };
+}
+/**
+ * Slack Webhook으로 메시지 전송
+ */
+async function sendSlackNotification(webhookUrl, message) {
+    const response = await fetch(webhookUrl, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(message),
+    });
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Slack notification failed: ${response.status} - ${errorText}`);
+    }
+}
+/**
+ * MAGI 리뷰 결과를 Slack으로 알림
+ */
+async function notifySlack(config, prTitle, prUrl, prNumber, reviews, votingSummary, commentUrl) {
+    // 알림 조건 확인
+    if (!shouldNotify(votingSummary, config.notifyOn)) {
+        console.log(`ℹ️ Slack notification skipped (notify_on: ${config.notifyOn})`);
+        return false;
+    }
+    // 메시지 생성
+    const message = buildSlackMessage(prTitle, prUrl, prNumber, reviews, votingSummary, commentUrl);
+    // 전송
+    await sendSlackNotification(config.webhookUrl, message);
+    console.log("📨 Slack notification sent!");
+    return true;
+}
 
 
 /***/ }),

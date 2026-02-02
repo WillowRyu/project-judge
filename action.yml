@@ -23,6 +23,9 @@ inputs:
   anthropic_api_key:
     description: "Anthropic API Key for Claude models (Claude 4.5)"
     required: false
+  slack_webhook_url:
+    description: "Slack Incoming Webhook URL for notifications"
+    required: false
   config_path:
     description: "Path to magi.yml configuration file"
     required: false

@@ -125,6 +125,46 @@ export declare const DebateConfigSchema: z.ZodObject<{
     trigger?: "conflict" | "disagreement" | "always" | undefined;
     revote_after_debate?: boolean | undefined;
 }>;
+export declare const SlackConfigSchema: z.ZodObject<{
+    enabled: z.ZodDefault<z.ZodBoolean>;
+    webhook_url: z.ZodOptional<z.ZodString>;
+    notify_on: z.ZodDefault<z.ZodEnum<["all", "rejection", "approval"]>>;
+}, "strip", z.ZodTypeAny, {
+    enabled: boolean;
+    notify_on: "all" | "rejection" | "approval";
+    webhook_url?: string | undefined;
+}, {
+    enabled?: boolean | undefined;
+    webhook_url?: string | undefined;
+    notify_on?: "all" | "rejection" | "approval" | undefined;
+}>;
+export declare const NotificationsConfigSchema: z.ZodObject<{
+    slack: z.ZodOptional<z.ZodObject<{
+        enabled: z.ZodDefault<z.ZodBoolean>;
+        webhook_url: z.ZodOptional<z.ZodString>;
+        notify_on: z.ZodDefault<z.ZodEnum<["all", "rejection", "approval"]>>;
+    }, "strip", z.ZodTypeAny, {
+        enabled: boolean;
+        notify_on: "all" | "rejection" | "approval";
+        webhook_url?: string | undefined;
+    }, {
+        enabled?: boolean | undefined;
+        webhook_url?: string | undefined;
+        notify_on?: "all" | "rejection" | "approval" | undefined;
+    }>>;
+}, "strip", z.ZodTypeAny, {
+    slack?: {
+        enabled: boolean;
+        notify_on: "all" | "rejection" | "approval";
+        webhook_url?: string | undefined;
+    } | undefined;
+}, {
+    slack?: {
+        enabled?: boolean | undefined;
+        webhook_url?: string | undefined;
+        notify_on?: "all" | "rejection" | "approval" | undefined;
+    } | undefined;
+}>;
 export declare const OptimizationConfigSchema: z.ZodObject<{
     tiered_models: z.ZodOptional<z.ZodObject<{
         small: z.ZodOptional<z.ZodString>;
@@ -302,6 +342,33 @@ export declare const MagiConfigSchema: z.ZodObject<{
         trigger?: "conflict" | "disagreement" | "always" | undefined;
         revote_after_debate?: boolean | undefined;
     }>>>;
+    notifications: z.ZodOptional<z.ZodObject<{
+        slack: z.ZodOptional<z.ZodObject<{
+            enabled: z.ZodDefault<z.ZodBoolean>;
+            webhook_url: z.ZodOptional<z.ZodString>;
+            notify_on: z.ZodDefault<z.ZodEnum<["all", "rejection", "approval"]>>;
+        }, "strip", z.ZodTypeAny, {
+            enabled: boolean;
+            notify_on: "all" | "rejection" | "approval";
+            webhook_url?: string | undefined;
+        }, {
+            enabled?: boolean | undefined;
+            webhook_url?: string | undefined;
+            notify_on?: "all" | "rejection" | "approval" | undefined;
+        }>>;
+    }, "strip", z.ZodTypeAny, {
+        slack?: {
+            enabled: boolean;
+            notify_on: "all" | "rejection" | "approval";
+            webhook_url?: string | undefined;
+        } | undefined;
+    }, {
+        slack?: {
+            enabled?: boolean | undefined;
+            webhook_url?: string | undefined;
+            notify_on?: "all" | "rejection" | "approval" | undefined;
+        } | undefined;
+    }>>;
     ignore: z.ZodOptional<z.ZodObject<{
         files: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         paths: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
@@ -358,6 +425,13 @@ export declare const MagiConfigSchema: z.ZodObject<{
         role?: string | undefined;
         guideline_file?: string | undefined;
     }[] | undefined;
+    notifications?: {
+        slack?: {
+            enabled: boolean;
+            notify_on: "all" | "rejection" | "approval";
+            webhook_url?: string | undefined;
+        } | undefined;
+    } | undefined;
     ignore?: {
         files?: string[] | undefined;
         paths?: string[] | undefined;
@@ -407,6 +481,13 @@ export declare const MagiConfigSchema: z.ZodObject<{
         max_rounds?: number | undefined;
         trigger?: "conflict" | "disagreement" | "always" | undefined;
         revote_after_debate?: boolean | undefined;
+    } | undefined;
+    notifications?: {
+        slack?: {
+            enabled?: boolean | undefined;
+            webhook_url?: string | undefined;
+            notify_on?: "all" | "rejection" | "approval" | undefined;
+        } | undefined;
     } | undefined;
     ignore?: {
         files?: string[] | undefined;
