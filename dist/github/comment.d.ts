@@ -1,8 +1,4 @@
 import { ReviewResult, VotingSummary } from "../personas/persona.interface";
-/**
- * Comment Generator
- * PR에 작성할 리뷰 코멘트 마크다운 생성
- */
 export interface CommentOptions {
     style: "summary" | "detailed";
     includeActionItems: boolean;
