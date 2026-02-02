@@ -49039,6 +49039,17 @@ exports.getCommentMarker = getCommentMarker;
 exports.generateCommentWithMarker = generateCommentWithMarker;
 const voter_1 = __nccwpck_require__(96085);
 /**
+ * 투표 결과 표시 (변경된 경우 before→after 형식)
+ */
+function formatVoteDisplay(review) {
+    const currentEmoji = (0, voter_1.getVoteEmoji)(review.vote);
+    if (review.originalVote && review.originalVote !== review.vote) {
+        const originalEmoji = (0, voter_1.getVoteEmoji)(review.originalVote);
+        return `${originalEmoji} ${review.originalVote} → ${currentEmoji} ${review.vote}`;
+    }
+    return `${currentEmoji} ${review.vote}`;
+}
+/**
  * Comment Generator
  * PR에 작성할 리뷰 코멘트 마크다운 생성
  */
@@ -49103,8 +49114,8 @@ function generateComment(reviews, votingSummary, options = { style: "detailed", 
     lines.push("| 페르소나 | 판정 | 핵심 이유 |");
     lines.push("|:-------:|:----:|----------|");
     for (const review of reviews) {
-        const emoji = (0, voter_1.getVoteEmoji)(review.vote);
-        lines.push(`| ${review.personaEmoji} ${review.personaName} | ${emoji} | ${review.reason} |`);
+        const voteDisplay = formatVoteDisplay(review);
+        lines.push(`| ${review.personaEmoji} ${review.personaName} | ${voteDisplay} | ${review.reason} |`);
     }
     lines.push("");
     // ========================================
@@ -49114,8 +49125,9 @@ function generateComment(reviews, votingSummary, options = { style: "detailed", 
         lines.push("---");
         lines.push("## 📝 상세 분석\n");
         for (const review of reviews) {
+            const voteDisplay = formatVoteDisplay(review);
             lines.push(`<details>`);
-            lines.push(`<summary><strong>${review.personaEmoji} ${review.personaName}</strong> (${(0, voter_1.getVoteEmoji)(review.vote)} ${review.vote})</summary>`);
+            lines.push(`<summary><strong>${review.personaEmoji} ${review.personaName}</strong> (${voteDisplay})</summary>`);
             lines.push(""); // 빈 줄 추가로 가독성 향상
             lines.push("<br>\n"); // 추가 간격
             // 코드 리뷰 내용 (details가 JSON이면 포맷팅)
@@ -50663,8 +50675,16 @@ async function runDebateRound(provider, personas, reviews, context, round) {
         if (debateResp?.changedVote) {
             return {
                 ...review,
+                originalVote: review.vote, // 원래 투표 저장
                 vote: debateResp.changedVote,
                 reason: debateResp.newReason || review.reason,
+                debateResponse: debateResp.response,
+            };
+        }
+        // 투표 변경 없어도 토론 응답이 있으면 추가
+        if (debateResp?.response) {
+            return {
+                ...review,
                 debateResponse: debateResp.response,
             };
         }

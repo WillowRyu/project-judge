@@ -2,6 +2,20 @@ import { ReviewResult, VotingSummary } from "../personas/persona.interface";
 import { getVoteEmoji, getVoteResultString } from "../review/voter";
 
 /**
+ * 투표 결과 표시 (변경된 경우 before→after 형식)
+ */
+function formatVoteDisplay(review: ReviewResult): string {
+  const currentEmoji = getVoteEmoji(review.vote);
+
+  if (review.originalVote && review.originalVote !== review.vote) {
+    const originalEmoji = getVoteEmoji(review.originalVote);
+    return `${originalEmoji} ${review.originalVote} → ${currentEmoji} ${review.vote}`;
+  }
+
+  return `${currentEmoji} ${review.vote}`;
+}
+
+/**
  * Comment Generator
  * PR에 작성할 리뷰 코멘트 마크다운 생성
  */
@@ -89,9 +103,9 @@ export function generateComment(
   lines.push("|:-------:|:----:|----------|");
 
   for (const review of reviews) {
-    const emoji = getVoteEmoji(review.vote);
+    const voteDisplay = formatVoteDisplay(review);
     lines.push(
-      `| ${review.personaEmoji} ${review.personaName} | ${emoji} | ${review.reason} |`,
+      `| ${review.personaEmoji} ${review.personaName} | ${voteDisplay} | ${review.reason} |`,
     );
   }
   lines.push("");
@@ -104,9 +118,10 @@ export function generateComment(
     lines.push("## 📝 상세 분석\n");
 
     for (const review of reviews) {
+      const voteDisplay = formatVoteDisplay(review);
       lines.push(`<details>`);
       lines.push(
-        `<summary><strong>${review.personaEmoji} ${review.personaName}</strong> (${getVoteEmoji(review.vote)} ${review.vote})</summary>`,
+        `<summary><strong>${review.personaEmoji} ${review.personaName}</strong> (${voteDisplay})</summary>`,
       );
       lines.push(""); // 빈 줄 추가로 가독성 향상
       lines.push("<br>\n"); // 추가 간격

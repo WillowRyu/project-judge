@@ -22,6 +22,7 @@ export interface ReviewResult {
   details: string;
   suggestions?: string[];
   debateResponse?: string; // 토론 응답 (토론 후 추가됨)
+  originalVote?: VoteResult; // 토론 전 원래 투표 (변경된 경우에만 설정)
 }
 
 export interface VotingSummary {
