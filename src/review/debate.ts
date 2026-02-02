@@ -151,22 +151,30 @@ export async function runDebateRound(
 
   const responses: DebateResponse[] = [];
 
-  // 각 페르소나가 다른 의견을 가진 페르소나에 대해 토론
+  // 각 페르소나가 다른 페르소나에 대해 토론
   for (const persona of personas) {
     const myReview = reviews.find((r) => r.personaId === persona.id);
-    const otherReviews = reviews.filter(
+
+    // 다른 의견을 가진 페르소나 우선, 없으면 모든 다른 페르소나
+    const differentOpinions = reviews.filter(
       (r) => r.personaId !== persona.id && r.vote !== myReview?.vote,
     );
 
+    // 아무도 다른 의견이 없으면 그냥 다른 페르소나들의 의견도 참조
+    const otherReviews =
+      differentOpinions.length > 0
+        ? differentOpinions
+        : reviews.filter((r) => r.personaId !== persona.id);
+
     if (otherReviews.length === 0) {
       console.log(
-        `  ${persona.emoji} ${persona.name}: No disagreements to address`,
+        `  ${persona.emoji} ${persona.name}: No other personas to discuss with`,
       );
       continue;
     }
 
     console.log(
-      `  ${persona.emoji} ${persona.name}: Responding to ${otherReviews.length} different opinions...`,
+      `  ${persona.emoji} ${persona.name}: Discussing with ${otherReviews.length} other personas...`,
     );
 
     const prompt = buildDebatePrompt(persona, otherReviews, context);
