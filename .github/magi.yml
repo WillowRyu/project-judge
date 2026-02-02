@@ -10,11 +10,11 @@ provider:
 voting:
   required_approvals: 2
 
-# 토론 기능 (Phase 2)
+# 토론 기능 (Phase 2) - 테스트용 비활성화
 debate:
-  enabled: true
+  enabled: false
   max_rounds: 1
-  trigger: always # 항상 토론 실행 (테스트용)
+  trigger: disagreement
   revote_after_debate: true
 
 # 출력 설정
