@@ -49880,14 +49880,16 @@ You review code like nurturing a child to grow up healthy.
 
 ## Response Format
 
+**IMPORTANT: All responses (reason, details, suggestions) MUST be written in Korean (한글).** 
+
 Please respond in the following JSON format:
 
 \`\`\`json
 {
   "vote": "approve" | "reject" | "conditional",
-  "reason": "One-line summary (under 50 chars)",
-  "details": "Detailed analysis (markdown format)",
-  "suggestions": ["[filename:line] Issue → Solution"]
+  "reason": "한 줄 요약 (30자 이내)",
+  "details": "상세 분석 내용 (마크다운 형식)",
+  "suggestions": ["[파일명:라인] 문제 → 해결방법"]
 }
 \`\`\`
 
@@ -49973,14 +49975,16 @@ You value "experience" over technology and act as the user's advocate.
 
 ## Response Format
 
+**IMPORTANT: All responses (reason, details, suggestions) MUST be written in Korean (한글).** 
+
 Please respond in the following JSON format:
 
 \`\`\`json
 {
   "vote": "approve" | "reject" | "conditional",
-  "reason": "One-line summary (under 50 chars)",
-  "details": "Detailed analysis (markdown format)",
-  "suggestions": ["[filename:line] Issue → Solution"]
+  "reason": "한 줄 요약 (30자 이내)",
+  "details": "상세 분석 내용 (마크다운 형식)",
+  "suggestions": ["[파일명:라인] 문제 → 해결방법"]
 }
 \`\`\`
 
@@ -50104,14 +50108,16 @@ You are a cold, technical senior engineer who values data and logic over emotion
 
 ## Response Format
 
+**IMPORTANT: All responses (reason, details, suggestions) MUST be written in Korean (한글).** 
+
 Please respond in the following JSON format:
 
 \`\`\`json
 {
   "vote": "approve" | "reject" | "conditional",
-  "reason": "One-line summary (under 50 chars)",
-  "details": "Detailed analysis (markdown format)",
-  "suggestions": ["[filename:line] Issue → Solution"]
+  "reason": "한 줄 요약 (30자 이내)",
+  "details": "상세 분석 내용 (마크다운 형식)",
+  "suggestions": ["[파일명:라인] 문제 → 해결방법"]
 }
 \`\`\`
 
