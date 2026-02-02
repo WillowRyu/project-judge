@@ -1,0 +1,26 @@
+# MAGI Review 설정
+version: 1
+
+# Provider 설정
+provider:
+  type: gemini
+  # model: gemini-2.5-flash  # 기본값 사용
+
+# 투표 설정
+voting:
+  required_approvals: 2
+
+# 토론 기능 (Phase 2)
+debate:
+  enabled: true
+  max_rounds: 1
+  trigger: disagreement # 의견 충돌 시 토론
+  revote_after_debate: true
+
+# 출력 설정
+output:
+  pr_comment:
+    enabled: true
+    style: detailed
+  labels:
+    enabled: true
