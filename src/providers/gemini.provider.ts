@@ -117,10 +117,52 @@ export class GeminiProvider implements LLMProvider {
   }
 
   /**
+   * Retry with exponential backoff for rate limit errors
+   */
+  private async withRetry<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelayMs: number = 2000,
+  ): Promise<T> {
+    let lastError: Error | undefined;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error: unknown) {
+        lastError = error as Error;
+        const errorMessage = String(error);
+
+        // 429 (Rate Limit) 또는 RESOURCE_EXHAUSTED 에러인 경우 재시도
+        const isRateLimitError =
+          errorMessage.includes("429") ||
+          errorMessage.includes("RESOURCE_EXHAUSTED") ||
+          errorMessage.includes("Resource exhausted");
+
+        if (isRateLimitError && attempt < maxRetries) {
+          const delay = baseDelayMs * Math.pow(2, attempt); // 2s, 4s, 8s
+          console.log(
+            `  ⏳ Rate limit hit, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...`,
+          );
+          await this.sleep(delay);
+        } else if (!isRateLimitError) {
+          throw error;
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
    * 특정 모델로 리뷰 수행 (페르소나별 모델 지원)
+   * Rate limit 에러 시 자동 재시도 (exponential backoff)
    */
   async reviewWithModel(prompt: string, model: string): Promise<string> {
-    // gemini-3 계열 모델이 다른 location 필요한 경우 새 클라이언트 생성
     const modelLocation = GeminiProvider.getLocationForModel(model);
     let clientToUse = this.client;
 
@@ -135,18 +177,20 @@ export class GeminiProvider implements LLMProvider {
       });
     }
 
-    const response = await clientToUse.models.generateContent({
-      model: model,
-      contents: prompt,
-      config: {
-        temperature: 0.7,
-        topP: 0.95,
-        topK: 40,
-        maxOutputTokens: 8192,
-      },
-    });
+    return this.withRetry(async () => {
+      const response = await clientToUse.models.generateContent({
+        model: model,
+        contents: prompt,
+        config: {
+          temperature: 0.7,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 8192,
+        },
+      });
 
-    return response.text ?? "";
+      return response.text ?? "";
+    });
   }
 
   /**
@@ -253,16 +297,18 @@ export class GeminiProvider implements LLMProvider {
         });
       }
 
-      const response = await clientToUse.models.generateContent({
-        model: model,
-        contents: personaPrompt,
-        config: {
-          temperature: 0.7,
-          topP: 0.95,
-          topK: 40,
-          maxOutputTokens: 8192,
-          cachedContent: cacheId,
-        },
+      const response = await this.withRetry(async () => {
+        return clientToUse.models.generateContent({
+          model: model,
+          contents: personaPrompt,
+          config: {
+            temperature: 0.7,
+            topP: 0.95,
+            topK: 40,
+            maxOutputTokens: 8192,
+            cachedContent: cacheId,
+          },
+        });
       });
 
       return response.text ?? "";

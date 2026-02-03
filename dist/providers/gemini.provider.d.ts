@@ -43,7 +43,13 @@ export declare class GeminiProvider implements LLMProvider {
      */
     review(prompt: string): Promise<string>;
     /**
+     * Retry with exponential backoff for rate limit errors
+     */
+    private withRetry;
+    private sleep;
+    /**
      * 특정 모델로 리뷰 수행 (페르소나별 모델 지원)
+     * Rate limit 에러 시 자동 재시도 (exponential backoff)
      */
     reviewWithModel(prompt: string, model: string): Promise<string>;
     /**
