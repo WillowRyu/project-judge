@@ -23,7 +23,9 @@ export interface ReviewOptions {
     tieredModels?: TierConfig;
 }
 /**
- * 모든 페르소나로 병렬 리뷰 수행 (최적화 적용)
+ * 모든 페르소나로 리뷰 수행 (적응형 실행)
+ * - 병렬 실행 시도
+ * - Rate limit 발생 시 순차 실행으로 자동 전환
  */
 export declare function runReviews(provider: LLMProvider, personas: Persona[], context: PRContext, options?: ReviewOptions): Promise<ReviewResult[]>;
 //# sourceMappingURL=orchestrator.d.ts.map

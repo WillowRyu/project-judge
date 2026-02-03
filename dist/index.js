@@ -51303,7 +51303,36 @@ function inferVoteFromText(text) {
     return "conditional";
 }
 /**
- * 모든 페르소나로 병렬 리뷰 수행 (최적화 적용)
+ * Rate limit 에러 체크
+ */
+function isRateLimitError(error) {
+    const errorMessage = String(error);
+    return (errorMessage.includes("429") ||
+        errorMessage.includes("RESOURCE_EXHAUSTED") ||
+        errorMessage.includes("Resource exhausted"));
+}
+/**
+ * 순차 리뷰 실행 (Rate limit 회피용)
+ * 각 요청 사이에 딜레이 추가
+ */
+async function runSequentialReviews(provider, personas, context, model, cacheId, useCompression, delayMs = 1500) {
+    const reviews = [];
+    for (let i = 0; i < personas.length; i++) {
+        const persona = personas[i];
+        console.log(`  - ${persona.emoji} ${persona.name} reviewing with ${model}... (${i + 1}/${personas.length})`);
+        const review = await reviewWithPersona(provider, persona, context, model, cacheId, useCompression);
+        reviews.push(review);
+        // 마지막이 아니면 딜레이
+        if (i < personas.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+    }
+    return reviews;
+}
+/**
+ * 모든 페르소나로 리뷰 수행 (적응형 실행)
+ * - 병렬 실행 시도
+ * - Rate limit 발생 시 순차 실행으로 자동 전환
  */
 async function runReviews(provider, personas, context, options = {}) {
     const { enableCaching = true, enableCompression = true, tieredModels, } = options;
@@ -51334,17 +51363,40 @@ async function runReviews(provider, personas, context, options = {}) {
             console.log(`   Context Cache: not available (${error})`);
         }
     }
-    // 4. 병렬 리뷰 실행
-    console.log(`\nStarting parallel reviews with ${personas.length} personas...`);
-    const reviews = await Promise.all(personas.map((persona) => {
-        console.log(`  - ${persona.emoji} ${persona.name} reviewing with ${modelTier.model}...`);
-        return reviewWithPersona(provider, persona, context, modelTier.model, cacheId, useCompression);
-    }));
+    // 4. 적응형 리뷰 실행 (병렬 → 순차 자동 전환)
+    let reviews;
+    try {
+        // 먼저 병렬 실행 시도
+        console.log(`\n🚀 Starting parallel reviews with ${personas.length} personas...`);
+        reviews = await Promise.all(personas.map((persona) => {
+            console.log(`  - ${persona.emoji} ${persona.name} reviewing with ${modelTier.model}...`);
+            return reviewWithPersona(provider, persona, context, modelTier.model, cacheId, useCompression);
+        }));
+        // Rate limit 에러가 있는 리뷰 체크
+        const hasRateLimitFailure = reviews.some((r) => r.details.includes("RESOURCE_EXHAUSTED") ||
+            r.details.includes("429") ||
+            r.details.includes("Rate limit"));
+        if (hasRateLimitFailure) {
+            throw new Error("Rate limit detected in parallel execution");
+        }
+    }
+    catch (error) {
+        // Rate limit 에러 시 순차 실행으로 전환
+        if (isRateLimitError(error) || String(error).includes("Rate limit")) {
+            console.log(`\n⚠️ Rate limit detected! Switching to sequential mode...`);
+            console.log(`   Waiting 3 seconds before retry...\n`);
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            reviews = await runSequentialReviews(provider, personas, context, modelTier.model, cacheId, useCompression, 2000);
+        }
+        else {
+            throw error;
+        }
+    }
     // 5. 캐시 정리
     if (cacheId && isGemini) {
         await provider.clearCache();
     }
-    console.log("All reviews completed.");
+    console.log("✅ All reviews completed.");
     return reviews;
 }
 
