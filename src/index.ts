@@ -200,36 +200,61 @@ async function run(): Promise<void> {
       `   Result: ${votingSummary.passed ? "✅ PASSED" : "❌ FAILED"}\n`,
     );
 
+    let commentStatus: "success" | "failed" | "skipped" = "skipped";
+    let labelsStatus: "success" | "failed" | "skipped" = "skipped";
+    let slackStatus: "success" | "failed" | "skipped" = "skipped";
+
     // 14. 라벨 준비
     if (config.output?.labels?.enabled !== false) {
-      await ensureLabelsExist(githubClient, {
-        approved: config.output?.labels?.approved || "magi-approved",
-        rejected: config.output?.labels?.rejected || "magi-changes-requested",
-      });
+      try {
+        await ensureLabelsExist(githubClient, {
+          approved: config.output?.labels?.approved || "magi-approved",
+          rejected:
+            config.output?.labels?.rejected || "magi-changes-requested",
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        core.warning(`Failed to ensure labels exist: ${message}`);
+      }
     }
 
     // 15. PR 코멘트 작성
     if (config.output?.pr_comment?.enabled !== false) {
-      await postOrUpdateComment(
-        githubClient,
-        prNumber,
-        reviews,
-        votingSummary,
-        {
-          style: config.output?.pr_comment?.style || "detailed",
-          includeActionItems: true,
-        },
-      );
-      console.log("💬 Posted review comment to PR\n");
+      try {
+        await postOrUpdateComment(
+          githubClient,
+          prNumber,
+          reviews,
+          votingSummary,
+          {
+            style: config.output?.pr_comment?.style || "detailed",
+            includeActionItems: true,
+          },
+        );
+        commentStatus = "success";
+        console.log("💬 Posted review comment to PR\n");
+      } catch (error) {
+        commentStatus = "failed";
+        const message = error instanceof Error ? error.message : String(error);
+        core.warning(`Failed to post review comment: ${message}`);
+      }
     }
 
     // 16. 라벨 적용
     if (config.output?.labels?.enabled !== false) {
-      await applyLabels(githubClient, prNumber, votingSummary, {
-        approved: config.output?.labels?.approved || "magi-approved",
-        rejected: config.output?.labels?.rejected || "magi-changes-requested",
-      });
-      console.log("🏷️ Applied labels\n");
+      try {
+        await applyLabels(githubClient, prNumber, votingSummary, {
+          approved: config.output?.labels?.approved || "magi-approved",
+          rejected:
+            config.output?.labels?.rejected || "magi-changes-requested",
+        });
+        labelsStatus = "success";
+        console.log("🏷️ Applied labels\n");
+      } catch (error) {
+        labelsStatus = "failed";
+        const message = error instanceof Error ? error.message : String(error);
+        core.warning(`Failed to apply labels: ${message}`);
+      }
     }
 
     // 17. Slack 알림 (설정에 따라)
@@ -250,10 +275,19 @@ async function run(): Promise<void> {
           reviews,
           votingSummary,
         );
+        slackStatus = "success";
       } catch (slackError) {
+        slackStatus = "failed";
         // Slack 에러는 전체 액션 실패로 이어지지 않도록 경고만 출력
-        console.warn("⚠️ Slack notification failed:", slackError);
+        const message =
+          slackError instanceof Error ? slackError.message : String(slackError);
+        core.warning(`Slack notification failed: ${message}`);
       }
+    } else if (slackConfig?.enabled && !webhookUrl) {
+      slackStatus = "failed";
+      core.warning(
+        "Slack notification is enabled, but no webhook URL was provided.",
+      );
     }
 
     // 17. 출력 설정
@@ -268,6 +302,9 @@ async function run(): Promise<void> {
         })),
       ),
     );
+    core.setOutput("comment_status", commentStatus);
+    core.setOutput("labels_status", labelsStatus);
+    core.setOutput("slack_status", slackStatus);
 
     console.log("🏛️ MAGI Review Complete!\n");
   } catch (error) {

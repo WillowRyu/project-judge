@@ -36,6 +36,12 @@ outputs:
     description: "Review result (approved/rejected)"
   votes:
     description: "JSON string of individual persona votes"
+  comment_status:
+    description: "PR comment status (success/failed/skipped)"
+  labels_status:
+    description: "Label apply status (success/failed/skipped)"
+  slack_status:
+    description: "Slack notification status (success/failed/skipped)"
 
 runs:
   using: "node20"
