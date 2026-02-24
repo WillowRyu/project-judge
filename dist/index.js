@@ -48958,6 +48958,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.createGitHubClient = createGitHubClient;
 exports.getPullRequest = getPullRequest;
 exports.getPullRequestFiles = getPullRequestFiles;
+exports.legacyGetPullRequestFiles = legacyGetPullRequestFiles;
 exports.getPullRequestNumber = getPullRequestNumber;
 exports.isGitHubActions = isGitHubActions;
 const github = __importStar(__nccwpck_require__(84903));
@@ -48992,12 +48993,29 @@ async function getPullRequest(client, prNumber) {
  * PR의 변경 파일 목록 조회
  */
 async function getPullRequestFiles(client, prNumber) {
+    // PR 파일은 기본적으로 1페이지(최대 100개)만 반환되므로 pagination 필수
+    const files = await client.octokit.paginate(client.octokit.rest.pulls.listFiles, {
+        owner: client.owner,
+        repo: client.repo,
+        pull_number: prNumber,
+        per_page: 100,
+    });
+    return mapPullRequestFiles(files);
+}
+/**
+ * PR의 변경 파일 목록 조회 (레거시 동작)
+ * listFiles 1회 호출만 사용하므로 100개 초과 파일은 누락될 수 있음
+ */
+async function legacyGetPullRequestFiles(client, prNumber) {
     const { data: files } = await client.octokit.rest.pulls.listFiles({
         owner: client.owner,
         repo: client.repo,
         pull_number: prNumber,
         per_page: 100,
     });
+    return mapPullRequestFiles(files);
+}
+function mapPullRequestFiles(files) {
     return files.map((file) => ({
         filename: file.filename,
         status: mapFileStatus(file.status),

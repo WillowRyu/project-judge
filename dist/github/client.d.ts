@@ -32,6 +32,11 @@ export declare function getPullRequest(client: GitHubClient, prNumber: number): 
  */
 export declare function getPullRequestFiles(client: GitHubClient, prNumber: number): Promise<FileDiff[]>;
 /**
+ * PR의 변경 파일 목록 조회 (레거시 동작)
+ * listFiles 1회 호출만 사용하므로 100개 초과 파일은 누락될 수 있음
+ */
+export declare function legacyGetPullRequestFiles(client: GitHubClient, prNumber: number): Promise<FileDiff[]>;
+/**
  * PR 번호 가져오기 (GitHub Context에서)
  * pull_request 이벤트와 issue_comment 이벤트 모두 지원
  */

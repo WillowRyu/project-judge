@@ -6,4 +6,5 @@ export declare function add(a: number, b: number): number;
 export declare function findMax(numbers: number[]): number;
 export declare function reverseString(str: string): string;
 export declare function greet(name: string): string;
+export declare function isPalindrome(str: string): boolean;
 //# sourceMappingURL=sample.d.ts.map
