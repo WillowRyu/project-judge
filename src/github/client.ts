@@ -24,6 +24,14 @@ export interface GitHubClient {
   repo: string;
 }
 
+interface PullRequestFileItem {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
+}
+
 /**
  * GitHub 클라이언트 생성
  */
@@ -65,6 +73,28 @@ export async function getPullRequestFiles(
   client: GitHubClient,
   prNumber: number,
 ): Promise<FileDiff[]> {
+  // PR 파일은 기본적으로 1페이지(최대 100개)만 반환되므로 pagination 필수
+  const files = await client.octokit.paginate(
+    client.octokit.rest.pulls.listFiles,
+    {
+      owner: client.owner,
+      repo: client.repo,
+      pull_number: prNumber,
+      per_page: 100,
+    },
+  );
+
+  return mapPullRequestFiles(files as PullRequestFileItem[]);
+}
+
+/**
+ * PR의 변경 파일 목록 조회 (레거시 동작)
+ * listFiles 1회 호출만 사용하므로 100개 초과 파일은 누락될 수 있음
+ */
+export async function legacyGetPullRequestFiles(
+  client: GitHubClient,
+  prNumber: number,
+): Promise<FileDiff[]> {
   const { data: files } = await client.octokit.rest.pulls.listFiles({
     owner: client.owner,
     repo: client.repo,
@@ -72,6 +102,10 @@ export async function getPullRequestFiles(
     per_page: 100,
   });
 
+  return mapPullRequestFiles(files as PullRequestFileItem[]);
+}
+
+function mapPullRequestFiles(files: PullRequestFileItem[]): FileDiff[] {
   return files.map((file) => ({
     filename: file.filename,
     status: mapFileStatus(file.status),
