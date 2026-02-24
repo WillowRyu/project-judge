@@ -25,3 +25,9 @@ export function reverseString(str: string): string {
 export function greet(name: string): string {
   return `Hello, ${name}!`;
 }
+
+// CI 워크플로우 테스트용 함수
+export function isPalindrome(str: string): boolean {
+  const cleaned = str.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return cleaned === cleaned.split("").reverse().join("");
+}
