@@ -181,9 +181,27 @@ export declare const OptimizationConfigSchema: z.ZodObject<{
     }>>;
     context_caching: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
     prompt_compression: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
+    hard_cut: z.ZodDefault<z.ZodOptional<z.ZodObject<{
+        enabled: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
+        max_changed_files: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+        max_changed_lines: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+    }, "strip", z.ZodTypeAny, {
+        enabled: boolean;
+        max_changed_files: number;
+        max_changed_lines: number;
+    }, {
+        enabled?: boolean | undefined;
+        max_changed_files?: number | undefined;
+        max_changed_lines?: number | undefined;
+    }>>>;
 }, "strip", z.ZodTypeAny, {
     context_caching: boolean;
     prompt_compression: boolean;
+    hard_cut: {
+        enabled: boolean;
+        max_changed_files: number;
+        max_changed_lines: number;
+    };
     tiered_models?: {
         small?: string | undefined;
         medium?: string | undefined;
@@ -197,6 +215,11 @@ export declare const OptimizationConfigSchema: z.ZodObject<{
     } | undefined;
     context_caching?: boolean | undefined;
     prompt_compression?: boolean | undefined;
+    hard_cut?: {
+        enabled?: boolean | undefined;
+        max_changed_files?: number | undefined;
+        max_changed_lines?: number | undefined;
+    } | undefined;
 }>;
 export declare const MagiConfigSchema: z.ZodObject<{
     version: z.ZodDefault<z.ZodNumber>;
@@ -309,9 +332,27 @@ export declare const MagiConfigSchema: z.ZodObject<{
         }>>;
         context_caching: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
         prompt_compression: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
+        hard_cut: z.ZodDefault<z.ZodOptional<z.ZodObject<{
+            enabled: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
+            max_changed_files: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+            max_changed_lines: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+        }, "strip", z.ZodTypeAny, {
+            enabled: boolean;
+            max_changed_files: number;
+            max_changed_lines: number;
+        }, {
+            enabled?: boolean | undefined;
+            max_changed_files?: number | undefined;
+            max_changed_lines?: number | undefined;
+        }>>>;
     }, "strip", z.ZodTypeAny, {
         context_caching: boolean;
         prompt_compression: boolean;
+        hard_cut: {
+            enabled: boolean;
+            max_changed_files: number;
+            max_changed_lines: number;
+        };
         tiered_models?: {
             small?: string | undefined;
             medium?: string | undefined;
@@ -325,6 +366,11 @@ export declare const MagiConfigSchema: z.ZodObject<{
         } | undefined;
         context_caching?: boolean | undefined;
         prompt_compression?: boolean | undefined;
+        hard_cut?: {
+            enabled?: boolean | undefined;
+            max_changed_files?: number | undefined;
+            max_changed_lines?: number | undefined;
+        } | undefined;
     }>>>;
     debate: z.ZodDefault<z.ZodOptional<z.ZodObject<{
         enabled: z.ZodDefault<z.ZodBoolean>;
@@ -403,6 +449,11 @@ export declare const MagiConfigSchema: z.ZodObject<{
     optimization: {
         context_caching: boolean;
         prompt_compression: boolean;
+        hard_cut: {
+            enabled: boolean;
+            max_changed_files: number;
+            max_changed_lines: number;
+        };
         tiered_models?: {
             small?: string | undefined;
             medium?: string | undefined;
@@ -475,6 +526,11 @@ export declare const MagiConfigSchema: z.ZodObject<{
         } | undefined;
         context_caching?: boolean | undefined;
         prompt_compression?: boolean | undefined;
+        hard_cut?: {
+            enabled?: boolean | undefined;
+            max_changed_files?: number | undefined;
+            max_changed_lines?: number | undefined;
+        } | undefined;
     } | undefined;
     debate?: {
         enabled?: boolean | undefined;
