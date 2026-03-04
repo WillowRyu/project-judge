@@ -173,6 +173,15 @@ provider:
 voting:
   required_approvals: 2 # Required approval count
 
+# Optimization & safety guard
+optimization:
+  prompt_compression: true
+  context_caching: true
+  hard_cut:
+    enabled: true
+    max_changed_files: 300
+    max_changed_lines: 100000
+
 # Debate feature
 debate:
   enabled: true
@@ -199,11 +208,14 @@ notifications:
 ignore:
   files:
     - "*.lock"
-    - "*.generated.*"
+    - ".generated."
   paths:
     - "node_modules/"
     - "dist/"
 ```
+
+Generated files are ignored by default (for example: `generated/`,
+`__generated__/`, `.generated.`, `.pb.`, `.g.dart`, `.designer.cs`).
 
 ## 📱 Slack Notifications
 

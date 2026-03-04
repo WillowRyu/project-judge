@@ -34,6 +34,8 @@ inputs:
 outputs:
   result:
     description: "Review result (approved/rejected)"
+  skip_reason:
+    description: "Skip reason when result is skipped"
   votes:
     description: "JSON string of individual persona votes"
   comment_status:

@@ -73,6 +73,14 @@ export const OptimizationConfigSchema = z.object({
   tiered_models: TieredModelsConfigSchema.optional(),
   context_caching: z.boolean().optional().default(true),
   prompt_compression: z.boolean().optional().default(true),
+  hard_cut: z
+    .object({
+      enabled: z.boolean().optional().default(true),
+      max_changed_files: z.number().int().positive().optional().default(300),
+      max_changed_lines: z.number().int().positive().optional().default(100000),
+    })
+    .optional()
+    .default({}),
 });
 
 export const MagiConfigSchema = z.object({

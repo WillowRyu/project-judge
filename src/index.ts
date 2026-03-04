@@ -116,6 +116,36 @@ async function run(): Promise<void> {
     if (files.length === 0) {
       console.log("⚠️ No files to review after filtering. Skipping review.");
       core.setOutput("result", "skipped");
+      core.setOutput("skip_reason", "no_reviewable_files");
+      core.setOutput("comment_status", "skipped");
+      core.setOutput("labels_status", "skipped");
+      core.setOutput("slack_status", "skipped");
+      return;
+    }
+
+    const totalChangedLines = files.reduce(
+      (sum, file) => sum + file.additions + file.deletions,
+      0,
+    );
+    const hardCut = config.optimization?.hard_cut;
+    const hardCutEnabled = hardCut?.enabled ?? true;
+    const maxChangedFiles = hardCut?.max_changed_files ?? 300;
+    const maxChangedLines = hardCut?.max_changed_lines ?? 100000;
+
+    if (
+      hardCutEnabled &&
+      (files.length > maxChangedFiles || totalChangedLines > maxChangedLines)
+    ) {
+      const reason = `hard_cut_triggered: files=${files.length}/${maxChangedFiles}, lines=${totalChangedLines}/${maxChangedLines}`;
+      core.warning(
+        `Skipping review due to hard cut threshold. ${reason}. ` +
+          "Split the PR or adjust optimization.hard_cut in magi.yml.",
+      );
+      core.setOutput("result", "skipped");
+      core.setOutput("skip_reason", reason);
+      core.setOutput("comment_status", "skipped");
+      core.setOutput("labels_status", "skipped");
+      core.setOutput("slack_status", "skipped");
       return;
     }
 
