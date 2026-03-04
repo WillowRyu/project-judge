@@ -173,6 +173,15 @@ provider:
 voting:
   required_approvals: 2 # 필요한 찬성 수
 
+# 최적화 및 안전 가드
+optimization:
+  prompt_compression: true
+  context_caching: true
+  hard_cut:
+    enabled: true
+    max_changed_files: 300
+    max_changed_lines: 100000
+
 # 토론 기능
 debate:
   enabled: true
@@ -199,11 +208,14 @@ notifications:
 ignore:
   files:
     - "*.lock"
-    - "*.generated.*"
+    - ".generated."
   paths:
     - "node_modules/"
     - "dist/"
 ```
+
+생성 파일은 기본적으로 무시됩니다 (예: `generated/`, `__generated__/`,
+`.generated.`, `.pb.`, `.g.dart`, `.designer.cs`).
 
 ## 📱 Slack 알림
 

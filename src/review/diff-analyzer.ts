@@ -1,3 +1,5 @@
+import { minimatch } from "minimatch";
+
 /**
  * Diff Analyzer
  * PR의 변경사항을 분석하고 토큰 최적화를 위해 압축
@@ -98,20 +100,30 @@ export function filterIgnoredFiles(
  * 간단한 glob 패턴 매칭
  */
 function matchGlobPattern(filename: string, pattern: string): boolean {
-  // *.extension 패턴
-  if (pattern.startsWith("*.")) {
-    const ext = pattern.slice(1);
-    return filename.endsWith(ext);
+  const normalizedFilename = filename.replace(/\\/g, "/").trim();
+  const normalizedPattern = pattern.replace(/\\/g, "/").trim();
+  if (!normalizedPattern) {
+    return false;
   }
 
-  // **/path/** 패턴
-  if (pattern.includes("**")) {
-    const parts = pattern.split("**");
-    return parts.every((part) => filename.includes(part.replace(/\//g, "")));
+  const normalizedPatternWithDirWildcard = normalizedPattern.endsWith("/")
+    ? `**/${normalizedPattern.replace(/^\/+|\/+$/g, "")}/**`
+    : normalizedPattern;
+
+  const hasGlobMagic = /[*?[\]{}()!+@]/.test(normalizedPatternWithDirWildcard);
+
+  // 하위호환: glob 문법이 없는 패턴은 기존처럼 부분 문자열 매칭 유지
+  if (!hasGlobMagic) {
+    return normalizedFilename
+      .toLowerCase()
+      .includes(normalizedPatternWithDirWildcard.toLowerCase());
   }
 
-  // 정확한 매칭
-  return filename === pattern || filename.includes(pattern);
+  return minimatch(normalizedFilename, normalizedPatternWithDirWildcard, {
+    nocase: true,
+    dot: true,
+    matchBase: true,
+  });
 }
 
 /**

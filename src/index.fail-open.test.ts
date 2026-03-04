@@ -8,6 +8,19 @@ type Scenario = {
   slackWebhookInput?: string;
   slackWebhookInConfig?: string;
   slackFails?: boolean;
+  expectResult?: "approved" | "skipped";
+  fileDiffs?: Array<{
+    filename: string;
+    status: "added" | "modified" | "removed" | "renamed";
+    additions: number;
+    deletions: number;
+    patch?: string;
+  }>;
+  hardCut?: {
+    enabled?: boolean;
+    max_changed_files?: number;
+    max_changed_lines?: number;
+  };
 };
 
 type RunResult = {
@@ -18,6 +31,7 @@ type RunResult = {
   ensureLabelsExist: ReturnType<typeof vi.fn>;
   applyLabels: ReturnType<typeof vi.fn>;
   notifySlack: ReturnType<typeof vi.fn>;
+  runReviews: ReturnType<typeof vi.fn>;
 };
 
 function createInputs(scenario: Scenario): Record<string, string> {
@@ -59,6 +73,17 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
   const notifySlack = scenario.slackFails
     ? vi.fn().mockRejectedValue(new Error("slack failed"))
     : vi.fn().mockResolvedValue(true);
+  const runReviews = vi.fn().mockResolvedValue([
+    {
+      personaId: "melchior",
+      personaName: "MELCHIOR",
+      personaEmoji: "🔬",
+      vote: "approve",
+      reason: "ok",
+      details: "ok",
+      suggestions: [],
+    },
+  ]);
 
   vi.doMock("@actions/core", () => ({
     getInput: (name: string) => createInputs(scenario)[name] || "",
@@ -75,7 +100,7 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
         pr_comment: { enabled: true, style: "detailed" },
         labels: { enabled: true, approved: "magi-approved", rejected: "magi-rejected" },
       },
-      optimization: {},
+      optimization: scenario.hardCut ? { hard_cut: scenario.hardCut } : {},
       debate: { enabled: false },
       notifications: scenario.slackEnabled
         ? {
@@ -136,15 +161,19 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
       headBranch: "feature",
       headSha: "abc",
     }),
-    getPullRequestFiles: vi.fn().mockResolvedValue([
-      {
-        filename: "src/a.ts",
-        status: "modified",
-        additions: 3,
-        deletions: 1,
-        patch: "@@ -1 +1 @@\n-old\n+new",
-      },
-    ]),
+    getPullRequestFiles: vi
+      .fn()
+      .mockResolvedValue(
+        scenario.fileDiffs || [
+          {
+            filename: "src/a.ts",
+            status: "modified",
+            additions: 3,
+            deletions: 1,
+            patch: "@@ -1 +1 @@\n-old\n+new",
+          },
+        ],
+      ),
     postOrUpdateComment,
     applyLabels,
     ensureLabelsExist,
@@ -159,17 +188,7 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
       compressedDiff: "@@ -1 +1 @@\n-old\n+new",
     }),
     filterIgnoredFiles: vi.fn((files: unknown[]) => files),
-    runReviews: vi.fn().mockResolvedValue([
-      {
-        personaId: "melchior",
-        personaName: "MELCHIOR",
-        personaEmoji: "🔬",
-        vote: "approve",
-        reason: "ok",
-        details: "ok",
-        suggestions: [],
-      },
-    ]),
+    runReviews,
     countVotesWithConfig: vi.fn().mockReturnValue({
       totalVoters: 1,
       approvals: 1,
@@ -188,7 +207,7 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
   await import("./index");
 
   await vi.waitFor(() => {
-    expect(outputs.get("result")).toBe("approved");
+    expect(outputs.get("result")).toBe(scenario.expectResult || "approved");
   });
 
   return {
@@ -199,6 +218,7 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
     ensureLabelsExist,
     applyLabels,
     notifySlack,
+    runReviews,
   };
 }
 
@@ -244,5 +264,36 @@ describe("index fail-open post actions", () => {
     expect(readOutput(result.setOutput, "comment_status")).toBe("success");
     expect(readOutput(result.setOutput, "labels_status")).toBe("failed");
     expect(readOutput(result.setOutput, "slack_status")).toBe("failed");
+  });
+
+  it("skips review before LLM calls when hard cut threshold is exceeded", async () => {
+    const result = await runActionScenario({
+      expectResult: "skipped",
+      hardCut: {
+        enabled: true,
+        max_changed_files: 300,
+        max_changed_lines: 100000,
+      },
+      fileDiffs: [
+        {
+          filename: "src/huge.generated.ts",
+          status: "modified",
+          additions: 100001,
+          deletions: 0,
+          patch: "@@ -1 +1 @@\n-old\n+new",
+        },
+      ],
+    });
+
+    expect(result.setFailed).not.toHaveBeenCalled();
+    expect(result.runReviews).not.toHaveBeenCalled();
+    expect(result.postOrUpdateComment).not.toHaveBeenCalled();
+    expect(result.applyLabels).not.toHaveBeenCalled();
+    expect(readOutput(result.setOutput, "skip_reason")).toContain(
+      "hard_cut_triggered",
+    );
+    expect(readOutput(result.setOutput, "comment_status")).toBe("skipped");
+    expect(readOutput(result.setOutput, "labels_status")).toBe("skipped");
+    expect(readOutput(result.setOutput, "slack_status")).toBe("skipped");
   });
 });
