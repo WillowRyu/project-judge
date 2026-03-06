@@ -215,7 +215,8 @@ ignore:
 ```
 
 Generated files are ignored by default (for example: `generated/`,
-`__generated__/`, `.generated.`, `.pb.`, `.g.dart`, `.designer.cs`).
+`__generated__/`, `.generated.`, `.pb.`, `.g.dart`, `.graphql.dart`,
+`.designer.cs`).
 
 ## 📱 Slack Notifications
 

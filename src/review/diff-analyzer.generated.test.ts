@@ -52,6 +52,12 @@ describe("filterIgnoredFiles generated file patterns", () => {
         deletions: 2,
       },
       {
+        filename: "lib/src/graphql/user.graphql.dart",
+        status: "modified",
+        additions: 11,
+        deletions: 3,
+      },
+      {
         filename: "src/ViewModel.Designer.cs",
         status: "modified",
         additions: 9,
@@ -65,7 +71,7 @@ describe("filterIgnoredFiles generated file patterns", () => {
       },
     ];
 
-    const patterns = [".pb.", ".g.dart", ".designer.cs"];
+    const patterns = [".pb.", ".g.dart", ".graphql.dart", ".designer.cs"];
     const filtered = filterIgnoredFiles(files, patterns);
 
     expect(filtered).toHaveLength(1);

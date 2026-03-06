@@ -215,7 +215,7 @@ ignore:
 ```
 
 생성 파일은 기본적으로 무시됩니다 (예: `generated/`, `__generated__/`,
-`.generated.`, `.pb.`, `.g.dart`, `.designer.cs`).
+`.generated.`, `.pb.`, `.g.dart`, `.graphql.dart`, `.designer.cs`).
 
 ## 📱 Slack 알림
 
