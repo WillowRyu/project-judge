@@ -48777,6 +48777,7 @@ const DEFAULT_IGNORE_PATTERNS = [
     ".gen.",
     ".pb.",
     ".g.dart",
+    ".graphql.dart",
     ".designer.cs",
     "*.lock",
     "package-lock.json",
