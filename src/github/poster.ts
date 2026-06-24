@@ -23,12 +23,16 @@ export async function postOrUpdateComment(
     options,
   );
 
-  // 기존 MAGI 코멘트 찾기
-  const { data: comments } = await client.octokit.rest.issues.listComments({
-    owner: client.owner,
-    repo: client.repo,
-    issue_number: prNumber,
-  });
+  // 기존 MAGI 코멘트 찾기 (코멘트가 많은 PR을 위해 전체 페이지 조회)
+  const comments = await client.octokit.paginate(
+    client.octokit.rest.issues.listComments,
+    {
+      owner: client.owner,
+      repo: client.repo,
+      issue_number: prNumber,
+      per_page: 100,
+    },
+  );
 
   const existingComment = comments.find((comment) =>
     comment.body?.includes(marker),
