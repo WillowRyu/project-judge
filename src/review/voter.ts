@@ -14,59 +14,52 @@ export interface VotingConfig {
   totalVoters: number;
 }
 
-/**
- * 투표 결과 집계
- */
-export function countVotes(reviews: ReviewResult[]): VotingSummary {
-  const approvals = reviews.filter((r) => r.vote === "approve").length;
-  const rejections = reviews.filter((r) => r.vote === "reject").length;
-  const conditionals = reviews.filter((r) => r.vote === "conditional").length;
-
-  // conditional은 0.5표로 계산
-  const effectiveApprovals = approvals + conditionals * 0.5;
-
-  return {
-    totalVoters: reviews.length,
-    approvals,
-    rejections,
-    conditionals,
-    passed: effectiveApprovals >= 2, // 기본: 2표 이상
-    requiredApprovals: 2,
-  };
-}
-
-/**
- * 설정 기반 투표 결과 집계
- */
 export function countVotesWithConfig(
   reviews: ReviewResult[],
   config: VotingConfig,
 ): VotingSummary {
-  const approvals = reviews.filter((r) => r.vote === "approve").length;
-  const rejections = reviews.filter((r) => r.vote === "reject").length;
-  const conditionals = reviews.filter((r) => r.vote === "conditional").length;
+  const valid = reviews.filter((r) => !r.error);
+  const approvals = valid.filter((r) => r.vote === "approve").length;
+  const rejections = valid.filter((r) => r.vote === "reject").length;
+  const conditionals = valid.filter((r) => r.vote === "conditional").length;
+  const errored = reviews.length - valid.length;
 
-  // conditional은 0.5표로 계산
+  // conditional은 0.5표
   const effectiveApprovals = approvals + conditionals * 0.5;
+  const validVoters = valid.length;
+  const undetermined = validVoters < config.requiredApprovals;
+  const passed = !undetermined && effectiveApprovals >= config.requiredApprovals;
 
   return {
     totalVoters: reviews.length,
     approvals,
     rejections,
     conditionals,
-    passed: effectiveApprovals >= config.requiredApprovals,
+    errored,
+    validVoters,
+    undetermined,
+    passed,
     requiredApprovals: config.requiredApprovals,
   };
 }
 
-/**
- * 최종 결과 문자열 생성
- */
+export function countVotes(reviews: ReviewResult[]): VotingSummary {
+  return countVotesWithConfig(reviews, {
+    requiredApprovals: 2,
+    totalVoters: reviews.length,
+  });
+}
+
 export function getVoteResultString(summary: VotingSummary): string {
-  if (summary.passed) {
-    return `✅ 승인 (${summary.approvals}${summary.conditionals > 0 ? `+${summary.conditionals}조건부` : ""}/${summary.totalVoters})`;
+  const errSuffix = summary.errored > 0 ? `, ${summary.errored} 실패` : "";
+
+  if (summary.undetermined) {
+    return `⚠️ 판정 불가 (유효 ${summary.validVoters}표, ${summary.requiredApprovals}표 필요${errSuffix})`;
   }
-  return `❌ 거부 (${summary.approvals}/${summary.totalVoters}, ${summary.requiredApprovals}표 필요)`;
+  if (summary.passed) {
+    return `✅ 승인 (${summary.approvals}${summary.conditionals > 0 ? `+${summary.conditionals}조건부` : ""}/${summary.validVoters}${errSuffix})`;
+  }
+  return `❌ 거부 (${summary.approvals}/${summary.validVoters}, ${summary.requiredApprovals}표 필요${errSuffix})`;
 }
 
 /**
