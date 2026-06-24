@@ -1,4 +1,5 @@
 import { LLMProvider } from "../providers/provider.interface";
+import { ProviderRegistry } from "../providers/registry";
 import {
   Persona,
   ReviewResult,
@@ -141,7 +142,7 @@ function parseDebateResponse(
  * 토론 라운드 실행
  */
 export async function runDebateRound(
-  provider: LLMProvider,
+  registry: ProviderRegistry,
   personas: Persona[],
   reviews: ReviewResult[],
   context: PRContext,
@@ -178,7 +179,14 @@ export async function runDebateRound(
     );
 
     const prompt = buildDebatePrompt(persona, otherReviews, context);
-    const response = await provider.review(prompt);
+    const provider: LLMProvider =
+      persona.provider && persona.provider !== registry.defaultType
+        ? registry.get(persona.provider)
+        : registry.default;
+    const response =
+      persona.model && provider.reviewWithModel
+        ? await provider.reviewWithModel(prompt, persona.model)
+        : await provider.review(prompt);
 
     const debateResponse = parseDebateResponse(
       persona,
@@ -227,7 +235,7 @@ export async function runDebateRound(
  * 전체 토론 프로세스 실행
  */
 export async function runDebate(
-  provider: LLMProvider,
+  registry: ProviderRegistry,
   personas: Persona[],
   reviews: ReviewResult[],
   context: PRContext,
@@ -252,7 +260,7 @@ export async function runDebate(
     }
 
     const result = await runDebateRound(
-      provider,
+      registry,
       personas,
       currentReviews,
       context,

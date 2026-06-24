@@ -1,5 +1,6 @@
-import { LLMProvider } from "../providers/provider.interface";
+import { LLMProvider, ProviderType } from "../providers/provider.interface";
 import { GeminiProvider } from "../providers/gemini.provider";
+import { ProviderRegistry } from "../providers/registry";
 import {
   Persona,
   ReviewResult,
@@ -106,6 +107,37 @@ ${prContext}
 반드시 지정된 JSON 형식으로만 응답해주세요.`;
 }
 
+interface PersonaPlan {
+  provider: LLMProvider;
+  model: string;
+  useCache: boolean;
+}
+
+function planForPersona(
+  registry: ProviderRegistry,
+  persona: Persona,
+  tierModel: string,
+  cacheEligible: boolean,
+): PersonaPlan {
+  const overrideType: ProviderType | undefined =
+    persona.provider && persona.provider !== registry.defaultType
+      ? persona.provider
+      : undefined;
+
+  if (overrideType) {
+    const provider = registry.get(overrideType);
+    const model =
+      persona.model ??
+      (provider.getDefaultModel ? provider.getDefaultModel() : tierModel);
+    return { provider, model, useCache: false };
+  }
+
+  const provider = registry.default;
+  const model = persona.model ?? tierModel;
+  const useCache = cacheEligible && !persona.model;
+  return { provider, model, useCache };
+}
+
 /**
  * 단일 페르소나로 리뷰 수행 (캐시 지원)
  */
@@ -114,30 +146,20 @@ async function reviewWithPersona(
   persona: Persona,
   context: PRContext,
   model: string,
-  cacheId?: string,
-  useCompression: boolean = false,
+  useCache: boolean,
+  cacheId: string | undefined,
+  useCompression: boolean,
 ): Promise<ReviewResult> {
   try {
     let response: string;
 
-    // 캐시 사용 가능하고 GeminiProvider인 경우
-    if (cacheId && provider instanceof GeminiProvider) {
+    if (useCache && cacheId && provider instanceof GeminiProvider) {
       const personaPrompt = buildPersonaPrompt(persona);
       response = await provider.reviewWithCache(cacheId, personaPrompt, model);
-    }
-    // 페르소나별 모델 지정 시
-    else if (persona.model && provider.reviewWithModel) {
-      console.log(`    Using persona model: ${persona.model}`);
-      const fullPrompt = buildFullPrompt(persona, context, useCompression);
-      response = await provider.reviewWithModel(fullPrompt, persona.model);
-    }
-    // 계층적 모델 사용
-    else if (provider.reviewWithModel) {
+    } else if (provider.reviewWithModel) {
       const fullPrompt = buildFullPrompt(persona, context, useCompression);
       response = await provider.reviewWithModel(fullPrompt, model);
-    }
-    // 기본 모델 사용
-    else {
+    } else {
       const fullPrompt = buildFullPrompt(persona, context, useCompression);
       response = await provider.review(fullPrompt);
     }
@@ -149,7 +171,9 @@ async function reviewWithPersona(
       personaId: persona.id,
       personaName: persona.name,
       personaEmoji: persona.emoji,
-      vote: "conditional",
+      vote: "conditional", // error:true이므로 집계 제외됨
+      error: true,
+      errorKind: isRateLimitError(error) ? "rate_limit" : "other",
       reason: "리뷰 실행 중 오류 발생",
       details: `리뷰를 수행하는 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`,
       suggestions: [],
@@ -196,14 +220,27 @@ function validateVote(vote: unknown): VoteResult {
   return "conditional";
 }
 
-function inferVoteFromText(text: string): VoteResult {
-  const lowerText = text.toLowerCase();
-  if (lowerText.includes("approve") || lowerText.includes("승인")) {
-    return "approve";
-  }
-  if (lowerText.includes("reject") || lowerText.includes("거부")) {
+export function inferVoteFromText(text: string): VoteResult {
+  const t = text.toLowerCase();
+
+  // 거부 신호 우선 (부정형 approve 포함)
+  if (
+    t.includes("reject") ||
+    t.includes("거부") ||
+    t.includes("승인 불가") ||
+    t.includes("cannot approve") ||
+    t.includes("can't approve") ||
+    t.includes("do not approve") ||
+    t.includes("don't approve") ||
+    t.includes("not approve")
+  ) {
     return "reject";
   }
+
+  if (t.includes("approve") || t.includes("승인")) {
+    return "approve";
+  }
+
   return "conditional";
 }
 
@@ -220,155 +257,95 @@ function isRateLimitError(error: unknown): boolean {
 }
 
 /**
- * 순차 리뷰 실행 (Rate limit 회피용)
- * 각 요청 사이에 딜레이 추가
- */
-async function runSequentialReviews(
-  provider: LLMProvider,
-  personas: Persona[],
-  context: PRContext,
-  model: string,
-  cacheId: string | undefined,
-  useCompression: boolean,
-  delayMs: number = 1500,
-): Promise<ReviewResult[]> {
-  const reviews: ReviewResult[] = [];
-
-  for (let i = 0; i < personas.length; i++) {
-    const persona = personas[i];
-    console.log(
-      `  - ${persona.emoji} ${persona.name} reviewing with ${model}... (${i + 1}/${personas.length})`,
-    );
-
-    const review = await reviewWithPersona(
-      provider,
-      persona,
-      context,
-      model,
-      cacheId,
-      useCompression,
-    );
-    reviews.push(review);
-
-    // 마지막이 아니면 딜레이
-    if (i < personas.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
-
-  return reviews;
-}
-
-/**
- * 모든 페르소나로 리뷰 수행 (적응형 실행)
- * - 병렬 실행 시도
- * - Rate limit 발생 시 순차 실행으로 자동 전환
+ * 모든 페르소나로 리뷰 수행
+ * - 병렬 실행
+ * - Rate limit으로 실패한 페르소나만 순차 재시도(성공분 보존)
  */
 export async function runReviews(
-  provider: LLMProvider,
+  registry: ProviderRegistry,
   personas: Persona[],
   context: PRContext,
   options: ReviewOptions = {},
 ): Promise<ReviewResult[]> {
-  const {
-    enableCaching = true,
-    enableCompression = true,
-    tieredModels,
-  } = options;
+  const { enableCaching = true, enableCompression = true, tieredModels } = options;
 
-  // 1. Diff 크기 분석 및 모델 선택
+  const defaultProvider = registry.default;
   const changedLines = getTotalChangedLines(context.diff);
-  const isGemini = provider instanceof GeminiProvider;
-  const mode = isGemini ? provider.getMode() : "api-key";
+  const isGemini = defaultProvider instanceof GeminiProvider;
+  const mode = isGemini ? defaultProvider.getMode() : "api-key";
   const modelTier = selectModelForDiff(changedLines, mode, tieredModels);
 
   console.log(`\n📊 Token Optimization Analysis:`);
   console.log(`   Total changes: ${changedLines} lines`);
   console.log(`   Tier: ${formatTierInfo(modelTier)}`);
 
-  // 2. 압축 필요 여부 확인
   const useCompression = enableCompression && modelTier.useCompression;
   if (useCompression) {
     console.log(`   Compression: enabled (large PR detected)`);
   }
 
-  // 3. Context Caching 시도 (GeminiProvider + 캐싱 활성화 시)
+  // default 경로(커스텀 모델 없음) 페르소나가 2명 이상일 때만 캐시 의미 있음
+  const defaultPathPersonas = personas.filter(
+    (p) => (!p.provider || p.provider === registry.defaultType) && !p.model,
+  );
   let cacheId: string | undefined;
-  if (enableCaching && isGemini && personas.length > 1) {
+  let cacheEligible = false;
+  if (enableCaching && isGemini && defaultPathPersonas.length > 1) {
     try {
       const prContextString = buildPRContextString(context, useCompression);
-      cacheId = await provider.createContextCache(
+      cacheId = await defaultProvider.createContextCache(
         prContextString,
         modelTier.model,
       );
       if (cacheId) {
-        console.log(`   Context Cache: created (3 personas will reuse)`);
+        cacheEligible = true;
+        console.log(`   Context Cache: created (reused by default-path personas)`);
       }
     } catch (error) {
       console.log(`   Context Cache: not available (${error})`);
     }
   }
 
-  // 4. 적응형 리뷰 실행 (병렬 → 순차 자동 전환)
-  let reviews: ReviewResult[];
-
-  try {
-    // 먼저 병렬 실행 시도
+  const reviewOne = (persona: Persona): Promise<ReviewResult> => {
+    const plan = planForPersona(registry, persona, modelTier.model, cacheEligible);
     console.log(
-      `\n🚀 Starting parallel reviews with ${personas.length} personas...`,
+      `  - ${persona.emoji} ${persona.name} reviewing with ${plan.provider.name}:${plan.model}...`,
     );
-
-    reviews = await Promise.all(
-      personas.map((persona) => {
-        console.log(
-          `  - ${persona.emoji} ${persona.name} reviewing with ${modelTier.model}...`,
-        );
-        return reviewWithPersona(
-          provider,
-          persona,
-          context,
-          modelTier.model,
-          cacheId,
-          useCompression,
-        );
-      }),
+    return reviewWithPersona(
+      plan.provider,
+      persona,
+      context,
+      plan.model,
+      plan.useCache,
+      cacheId,
+      useCompression,
     );
+  };
 
-    // Rate limit 에러가 있는 리뷰 체크
-    const hasRateLimitFailure = reviews.some(
-      (r) =>
-        r.details.includes("RESOURCE_EXHAUSTED") ||
-        r.details.includes("429") ||
-        r.details.includes("Rate limit"),
+  console.log(`\n🚀 Starting parallel reviews with ${personas.length} personas...`);
+  const reviews = await Promise.all(personas.map((p) => reviewOne(p)));
+
+  // rate limit으로 실패한 페르소나만 순차 재시도(성공분 보존)
+  const rateLimited = reviews
+    .map((r, i) => ({ r, i }))
+    .filter((x) => x.r.error && x.r.errorKind === "rate_limit");
+
+  if (rateLimited.length > 0) {
+    console.log(
+      `\n⚠️ Rate limit on ${rateLimited.length} persona(s). Retrying those sequentially...`,
     );
-
-    if (hasRateLimitFailure) {
-      throw new Error("Rate limit detected in parallel execution");
-    }
-  } catch (error) {
-    // Rate limit 에러 시 순차 실행으로 전환
-    if (isRateLimitError(error) || String(error).includes("Rate limit")) {
-      console.log(`\n⚠️ Rate limit detected! Switching to sequential mode...`);
-      console.log(`   Waiting 3 seconds before retry...\n`);
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      reviews = await runSequentialReviews(
-        provider,
-        personas,
-        context,
-        modelTier.model,
-        cacheId,
-        useCompression,
-        2000, // 각 요청 사이 2초 딜레이
-      );
-    } else {
-      throw error;
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    for (let k = 0; k < rateLimited.length; k++) {
+      const { i } = rateLimited[k];
+      reviews[i] = await reviewOne(personas[i]);
+      if (k < rateLimited.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
     }
   }
 
-  // 5. 캐시 정리
   if (cacheId && isGemini) {
-    await provider.clearCache();
+    await defaultProvider.clearCache();
   }
 
   console.log("✅ All reviews completed.");
