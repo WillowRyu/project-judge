@@ -8,7 +8,8 @@ type Scenario = {
   slackWebhookInput?: string;
   slackWebhookInConfig?: string;
   slackFails?: boolean;
-  expectResult?: "approved" | "skipped";
+  expectResult?: "approved" | "skipped" | "error";
+  undetermined?: boolean;
   fileDiffs?: Array<{
     filename: string;
     status: "added" | "modified" | "removed" | "renamed";
@@ -116,10 +117,13 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
   }));
 
   vi.doMock("./providers", () => ({
-    createProvider: vi.fn().mockReturnValue({
-      name: "gemini",
-      review: vi.fn(),
-      reviewWithModel: vi.fn(),
+    createProvider: vi.fn(),
+    hasCredentials: vi.fn().mockReturnValue(true),
+    createProviderRegistry: vi.fn().mockReturnValue({
+      defaultType: "gemini",
+      default: { name: "gemini", review: vi.fn(), reviewWithModel: vi.fn(), getDefaultModel: () => "m" },
+      get: vi.fn(),
+      has: vi.fn().mockReturnValue(true),
     }),
   }));
 
@@ -189,17 +193,31 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
     }),
     filterIgnoredFiles: vi.fn((files: unknown[]) => files),
     runReviews,
-    countVotesWithConfig: vi.fn().mockReturnValue({
-      totalVoters: 1,
-      approvals: 1,
-      rejections: 0,
-      conditionals: 0,
-      errored: 0,
-      validVoters: 1,
-      undetermined: false,
-      passed: true,
-      requiredApprovals: 1,
-    }),
+    countVotesWithConfig: vi.fn().mockReturnValue(
+      scenario.undetermined
+        ? {
+            totalVoters: 3,
+            approvals: 1,
+            rejections: 0,
+            conditionals: 0,
+            errored: 2,
+            validVoters: 1,
+            undetermined: true,
+            passed: false,
+            requiredApprovals: 2,
+          }
+        : {
+            totalVoters: 1,
+            approvals: 1,
+            rejections: 0,
+            conditionals: 0,
+            errored: 0,
+            validVoters: 1,
+            undetermined: false,
+            passed: true,
+            requiredApprovals: 1,
+          },
+    ),
     runDebate: vi.fn(),
   }));
 
@@ -298,5 +316,11 @@ describe("index fail-open post actions", () => {
     expect(readOutput(result.setOutput, "comment_status")).toBe("skipped");
     expect(readOutput(result.setOutput, "labels_status")).toBe("skipped");
     expect(readOutput(result.setOutput, "slack_status")).toBe("skipped");
+  });
+
+  it("fails the action and skips labels when reviews are undetermined", async () => {
+    const result = await runActionScenario({ undetermined: true, expectResult: "error" });
+    expect(result.setFailed).toHaveBeenCalled();
+    expect(readOutput(result.setOutput, "labels_status")).toBe("skipped");
   });
 });

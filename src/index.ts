@@ -1,6 +1,10 @@
 import * as core from "@actions/core";
 import { loadConfig } from "./config/loader";
-import { createProvider } from "./providers";
+import {
+  createProviderRegistry,
+  hasCredentials,
+  ProviderType,
+} from "./providers";
 import { loadPersonasFromConfig } from "./personas/loader";
 import {
   createGitHubClient,
@@ -43,30 +47,32 @@ async function run(): Promise<void> {
     const config = await loadConfig(workspacePath, configPath);
     const providerType = config.provider?.type || "gemini";
 
-    // 인증 방식 확인 (선택된 provider에 따라)
-    const hasValidAuth = (() => {
-      switch (providerType) {
-        case "openai":
-          return !!openaiApiKey;
-        case "claude":
-          return !!anthropicApiKey;
-        case "gemini":
-        default:
-          return !!geminiApiKey || !!gcpProjectId;
-      }
-    })();
+    // 자격증명 수집
+    const credentials = {
+      geminiApiKey: geminiApiKey || undefined,
+      gcpProjectId: gcpProjectId || undefined,
+      gcpLocation: gcpLocation || undefined,
+      openaiApiKey: openaiApiKey || undefined,
+      anthropicApiKey: anthropicApiKey || undefined,
+    };
 
-    if (!hasValidAuth) {
-      throw new Error(
-        `Missing API key for provider "${providerType}". ` +
-          `Required: ${
-            providerType === "openai"
-              ? "openai_api_key"
-              : providerType === "claude"
-                ? "anthropic_api_key"
-                : "gemini_api_key or gcp_project_id"
-          }`,
-      );
+    // 전역 + 페르소나별 provider가 요구하는 모든 자격증명 검증
+    const requiredTypes = new Set<ProviderType>([providerType as ProviderType]);
+    for (const p of config.personas ?? []) {
+      if (p.provider) requiredTypes.add(p.provider);
+    }
+    for (const type of requiredTypes) {
+      if (!hasCredentials(type, credentials)) {
+        const keyHint =
+          type === "openai"
+            ? "openai_api_key"
+            : type === "claude"
+              ? "anthropic_api_key"
+              : "gemini_api_key or gcp_project_id";
+        throw new Error(
+          `Missing API key for provider "${type}". Required: ${keyHint}`,
+        );
+      }
     }
 
     const authMode =
@@ -155,27 +161,13 @@ async function run(): Promise<void> {
     console.log(`   +${analyzedDiff.totalAdditions} additions`);
     console.log(`   -${analyzedDiff.totalDeletions} deletions\n`);
 
-    // 9. LLM Provider 생성 (provider type에 따라 적절한 API key 사용)
-    const apiKeyForProvider = (() => {
-      switch (providerType) {
-        case "openai":
-          return openaiApiKey;
-        case "claude":
-          return anthropicApiKey;
-        case "gemini":
-        default:
-          return geminiApiKey;
-      }
-    })();
-
-    const provider = createProvider({
-      type: providerType,
-      apiKey: apiKeyForProvider || undefined,
-      gcpProjectId: gcpProjectId || undefined,
-      gcpLocation: gcpLocation,
-      model: config.provider?.model,
-    });
-    console.log(`🤖 Using ${provider.name} provider\n`);
+    // 9. LLM Provider 레지스트리 생성
+    const registry = createProviderRegistry(
+      credentials,
+      providerType as ProviderType,
+      config.provider?.model,
+    );
+    console.log(`🤖 Using ${registry.default.name} provider (default)\n`);
 
     // 10. 페르소나 로드
     const personas = await loadPersonasFromConfig(
@@ -200,7 +192,7 @@ async function run(): Promise<void> {
 
     // 12. 리뷰 실행 (토큰 최적화 옵션 적용)
     console.log("🔍 Running reviews...\n");
-    let reviews = await runReviews(provider, personas, prContext, {
+    let reviews = await runReviews(registry, personas, prContext, {
       enableCaching: config.optimization?.context_caching ?? true,
       enableCompression: config.optimization?.prompt_compression ?? true,
       tieredModels: config.optimization?.tiered_models,
@@ -208,7 +200,7 @@ async function run(): Promise<void> {
 
     // 12-1. 토론 실행 (설정에 따라)
     if (config.debate?.enabled) {
-      reviews = await runDebate(provider, personas, reviews, prContext, {
+      reviews = await runDebate(registry, personas, reviews, prContext, {
         enabled: config.debate.enabled,
         maxRounds: config.debate.max_rounds ?? 1,
         trigger: config.debate.trigger ?? "disagreement",
@@ -271,7 +263,7 @@ async function run(): Promise<void> {
     }
 
     // 16. 라벨 적용
-    if (config.output?.labels?.enabled !== false) {
+    if (!votingSummary.undetermined && config.output?.labels?.enabled !== false) {
       try {
         await applyLabels(githubClient, prNumber, votingSummary, {
           approved: config.output?.labels?.approved || "magi-approved",
@@ -321,7 +313,12 @@ async function run(): Promise<void> {
     }
 
     // 17. 출력 설정
-    core.setOutput("result", votingSummary.passed ? "approved" : "rejected");
+    const resultOutput = votingSummary.undetermined
+      ? "error"
+      : votingSummary.passed
+        ? "approved"
+        : "rejected";
+    core.setOutput("result", resultOutput);
     core.setOutput(
       "votes",
       JSON.stringify(
@@ -335,6 +332,12 @@ async function run(): Promise<void> {
     core.setOutput("comment_status", commentStatus);
     core.setOutput("labels_status", labelsStatus);
     core.setOutput("slack_status", slackStatus);
+
+    if (votingSummary.undetermined) {
+      core.setFailed(
+        `리뷰 실패로 정족수 미달: 유효 ${votingSummary.validVoters}표 < 필요 ${votingSummary.requiredApprovals}표 (${votingSummary.errored}개 리뷰 실패). 일시적 오류일 수 있으니 재실행하세요.`,
+      );
+    }
 
     console.log("🏛️ MAGI Review Complete!\n");
   } catch (error) {
