@@ -131,6 +131,68 @@ describe("runDebate with errored personas", () => {
     expect(c.debateResponse).toBeDefined();
   });
 
+  it("does not throw when a NON-errored persona's provider fails, and other personas still debate", async () => {
+    // 'a' is NOT errored, so it is not skipped: its provider IS invoked.
+    // The provider throws -> the per-persona try/catch must swallow it,
+    // keep 'a''s original review, and let the other valid personas debate.
+    const def = fakeProvider(
+      "gemini",
+      async () =>
+        '```json\n{"response":"재고하겠습니다","changedVote":"approve","newReason":"설득됨"}\n```',
+    );
+    const downProvider: LLMProvider = {
+      name: "openai",
+      review: vi.fn(async () => {
+        throw new Error("provider down during debate");
+      }),
+      reviewWithModel: vi.fn(async () => {
+        throw new Error("provider down during debate");
+      }),
+      getDefaultModel: () => "openai-default",
+    };
+
+    const personas = [
+      persona("a", { provider: "openai" }),
+      persona("b"),
+      persona("c"),
+    ];
+    // Disagreeing votes so needsDebate triggers under trigger:"disagreement".
+    // None is errored.
+    const reviews = [
+      review("a", { vote: "approve" }),
+      review("b", { vote: "reject" }),
+      review("c", { vote: "conditional" }),
+    ];
+
+    // (a) resolves without throwing
+    const result = await runDebate(
+      registryOf(def, { openai: downProvider }),
+      personas,
+      reviews,
+      ctx(),
+      debateConfig({ trigger: "disagreement" }),
+    );
+    expect(result).toBeDefined();
+
+    // 'a''s provider was actually invoked (it is non-errored, not skipped)
+    expect(downProvider.review).toHaveBeenCalledTimes(1);
+
+    // (b) 'a' unchanged: no debateResponse, no originalVote, vote intact
+    const a = result.find((r) => r.personaId === "a")!;
+    expect(a.vote).toBe("approve");
+    expect(a.debateResponse).toBeUndefined();
+    expect(a.originalVote).toBeUndefined();
+
+    // (c) at least one OTHER valid persona still got processed
+    const b = result.find((r) => r.personaId === "b")!;
+    const c = result.find((r) => r.personaId === "c")!;
+    expect(b.debateResponse).toBeDefined();
+    expect(c.debateResponse).toBeDefined();
+    // 'b' actually changed its vote via the default provider's response
+    expect(b.vote).toBe("approve");
+    expect(b.originalVote).toBe("reject");
+  });
+
   it("never calls the errored persona's provider", async () => {
     const bReview = vi.fn(async () => APPROVE_DEBATE_JSON);
     const bProvider: LLMProvider = {
