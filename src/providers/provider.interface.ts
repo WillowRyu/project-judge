@@ -9,8 +9,10 @@ export interface LLMProvider {
   getDefaultModel?(): string;
 }
 
+export type ProviderType = "gemini" | "openai" | "claude";
+
 export interface ProviderConfig {
-  type: "gemini" | "openai" | "claude";
+  type: ProviderType;
   apiKey?: string;
   // GCP Vertex AI 인증용
   gcpProjectId?: string;

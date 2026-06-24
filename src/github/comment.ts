@@ -5,6 +5,10 @@ import { getVoteEmoji, getVoteResultString } from "../review/voter";
  * 투표 결과 표시 (변경된 경우 before→after 형식)
  */
 function formatVoteDisplay(review: ReviewResult): string {
+  if (review.error) {
+    return "⚠️ 리뷰 실패 (집계 제외)";
+  }
+
   const currentEmoji = getVoteEmoji(review.vote);
 
   if (review.originalVote && review.originalVote !== review.vote) {
@@ -199,7 +203,7 @@ export function generateComment(
   // 푸터
   lines.push("---");
   lines.push(
-    "*이 리뷰는 [MAGI Review](https://github.com/your-org/magi-review) 시스템에 의해 자동 생성되었습니다.*",
+    "*이 리뷰는 [MAGI Review](https://github.com/WillowRyu/project-judge) 시스템에 의해 자동 생성되었습니다.*",
   );
 
   return lines.join("\n");

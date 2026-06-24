@@ -1,5 +1,5 @@
-import { LLMProvider } from "../providers/provider.interface";
-import { Persona, ReviewResult } from "../personas/persona.interface";
+import { ProviderRegistry } from "../providers/registry";
+import { Persona, ReviewResult, VoteResult } from "../personas/persona.interface";
 import { AnalyzedDiff } from "./diff-analyzer";
 import { TierConfig } from "./tiered-model-selector";
 /**
@@ -22,10 +22,11 @@ export interface ReviewOptions {
     enableCompression?: boolean;
     tieredModels?: TierConfig;
 }
+export declare function inferVoteFromText(text: string): VoteResult;
 /**
- * 모든 페르소나로 리뷰 수행 (적응형 실행)
- * - 병렬 실행 시도
- * - Rate limit 발생 시 순차 실행으로 자동 전환
+ * 모든 페르소나로 리뷰 수행
+ * - 병렬 실행
+ * - Rate limit으로 실패한 페르소나만 순차 재시도(성공분 보존)
  */
-export declare function runReviews(provider: LLMProvider, personas: Persona[], context: PRContext, options?: ReviewOptions): Promise<ReviewResult[]>;
+export declare function runReviews(registry: ProviderRegistry, personas: Persona[], context: PRContext, options?: ReviewOptions): Promise<ReviewResult[]>;
 //# sourceMappingURL=orchestrator.d.ts.map

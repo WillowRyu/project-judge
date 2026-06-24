@@ -47,6 +47,10 @@ export function shouldNotify(
  * 투표 결과를 Slack 형식으로 포맷
  */
 function formatVoteForSlack(review: ReviewResult): string {
+  if (review.error) {
+    return "⚠️";
+  }
+
   const emoji = getVoteEmoji(review.vote);
 
   if (review.originalVote && review.originalVote !== review.vote) {
@@ -68,13 +72,21 @@ export function buildSlackMessage(
   votingSummary: VotingSummary,
   commentUrl?: string,
 ): SlackMessage {
-  const resultEmoji = votingSummary.passed ? "✅" : "❌";
-  const resultText = votingSummary.passed ? "승인" : "거부";
+  const resultEmoji = votingSummary.undetermined
+    ? "⚠️"
+    : votingSummary.passed
+      ? "✅"
+      : "❌";
+  const resultText = votingSummary.undetermined
+    ? "판정 불가"
+    : votingSummary.passed
+      ? "승인"
+      : "거부";
 
   // 투표 결과 필드 생성
   const voteFields = reviews.map((review) => ({
     type: "mrkdwn" as const,
-    text: `${review.personaEmoji} *${review.personaName}*\n${formatVoteForSlack(review)} ${review.vote}`,
+    text: `${review.personaEmoji} *${review.personaName}*\n${formatVoteForSlack(review)} ${review.error ? "리뷰 실패" : review.vote}`,
   }));
 
   const blocks: SlackBlock[] = [
@@ -100,7 +112,7 @@ export function buildSlackMessage(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `${resultEmoji} *${resultText}* (${votingSummary.approvals}/${votingSummary.totalVoters}, ${votingSummary.requiredApprovals}표 필요)`,
+        text: `${resultEmoji} *${resultText}* (${votingSummary.approvals}/${votingSummary.validVoters}, ${votingSummary.requiredApprovals}표 필요${votingSummary.errored > 0 ? `, ${votingSummary.errored} 실패` : ""})`,
       },
     },
     // 구분선
