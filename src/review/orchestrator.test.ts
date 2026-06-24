@@ -86,6 +86,17 @@ describe("runReviews", () => {
     expect(openai.reviewWithModel).toHaveBeenCalledWith(expect.any(String), "gpt-x");
     expect(def.reviewWithModel).not.toHaveBeenCalled();
   });
+
+  it("wraps PR content with an injection guard instruction", async () => {
+    let captured = "";
+    const def = fakeProvider("gemini", async (p) => {
+      captured = p;
+      return APPROVE_JSON;
+    });
+    await runReviews(registryOf(def), [persona("a")], ctx(), { enableCaching: false });
+    expect(captured).toContain("리뷰 대상 데이터");
+    expect(captured).toContain("<<<PR_CONTENT>>>");
+  });
 });
 
 describe("inferVoteFromText", () => {
