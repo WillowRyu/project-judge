@@ -49823,8 +49823,16 @@ function formatVoteForSlack(review) {
  * Slack Block Kit 메시지 생성
  */
 function buildSlackMessage(prTitle, prUrl, prNumber, reviews, votingSummary, commentUrl) {
-    const resultEmoji = votingSummary.passed ? "✅" : "❌";
-    const resultText = votingSummary.passed ? "승인" : "거부";
+    const resultEmoji = votingSummary.undetermined
+        ? "⚠️"
+        : votingSummary.passed
+            ? "✅"
+            : "❌";
+    const resultText = votingSummary.undetermined
+        ? "판정 불가"
+        : votingSummary.passed
+            ? "승인"
+            : "거부";
     // 투표 결과 필드 생성
     const voteFields = reviews.map((review) => ({
         type: "mrkdwn",
@@ -50981,18 +50989,23 @@ const DEFAULT_DEBATE_CONFIG = {
 function needsDebate(reviews, config = DEFAULT_DEBATE_CONFIG) {
     if (!config.enabled)
         return false;
+    // 실패(abstain)한 리뷰는 토론 대상이 아님: 유효 리뷰만으로 판단
+    const validReviews = reviews.filter((r) => !r.error);
+    // 토론은 2명 이상의 유효 참가자가 있어야 의미가 있음
+    if (validReviews.length < 2)
+        return false;
     if (config.trigger === "always")
         return true;
-    const hasApproval = reviews.some((r) => r.vote === "approve");
-    const hasRejection = reviews.some((r) => r.vote === "reject");
+    const hasApproval = validReviews.some((r) => r.vote === "approve");
+    const hasRejection = validReviews.some((r) => r.vote === "reject");
     if (config.trigger === "conflict") {
         // approve와 reject가 모두 있을 때만 토론
         return hasApproval && hasRejection;
     }
     if (config.trigger === "disagreement") {
         // 만장일치가 아닐 때 토론
-        const firstVote = reviews[0]?.vote;
-        return reviews.some((r) => r.vote !== firstVote);
+        const firstVote = validReviews[0]?.vote;
+        return validReviews.some((r) => r.vote !== firstVote);
     }
     return false;
 }
@@ -51064,12 +51077,17 @@ async function runDebateRound(registry, personas, reviews, context, round) {
     // 각 페르소나가 다른 페르소나에 대해 토론
     for (const persona of personas) {
         const myReview = reviews.find((r) => r.personaId === persona.id);
-        // 다른 의견을 가진 페르소나 우선, 없으면 모든 다른 페르소나
-        const differentOpinions = reviews.filter((r) => r.personaId !== persona.id && r.vote !== myReview?.vote);
+        // 리뷰에 실패(abstain)한 페르소나는 토론에 참여하지 않음
+        if (myReview?.error) {
+            console.log(`  ${persona.emoji} ${persona.name}: Skipping (review failed, abstaining)`);
+            continue;
+        }
+        // 실패한 리뷰는 다른 페르소나의 "의견"으로 제시하지 않음
+        const validOtherReviews = reviews.filter((r) => r.personaId !== persona.id && !r.error);
+        // 다른 의견을 가진 페르소나 우선, 없으면 모든 (유효한) 다른 페르소나
+        const differentOpinions = validOtherReviews.filter((r) => r.vote !== myReview?.vote);
         // 아무도 다른 의견이 없으면 그냥 다른 페르소나들의 의견도 참조
-        const otherReviews = differentOpinions.length > 0
-            ? differentOpinions
-            : reviews.filter((r) => r.personaId !== persona.id);
+        const otherReviews = differentOpinions.length > 0 ? differentOpinions : validOtherReviews;
         if (otherReviews.length === 0) {
             console.log(`  ${persona.emoji} ${persona.name}: No other personas to discuss with`);
             continue;
@@ -51079,9 +51097,19 @@ async function runDebateRound(registry, personas, reviews, context, round) {
         const provider = persona.provider && persona.provider !== registry.defaultType
             ? registry.get(persona.provider)
             : registry.default;
-        const response = persona.model && provider.reviewWithModel
-            ? await provider.reviewWithModel(prompt, persona.model)
-            : await provider.review(prompt);
+        // 토론 중 provider 실패는 전체 액션을 중단시키면 안 됨:
+        // 경고만 남기고 해당 페르소나는 기존 리뷰를 그대로 유지
+        let response;
+        try {
+            response =
+                persona.model && provider.reviewWithModel
+                    ? await provider.reviewWithModel(prompt, persona.model)
+                    : await provider.review(prompt);
+        }
+        catch (err) {
+            console.warn(`  ⚠️ ${persona.emoji} ${persona.name}: Debate call failed, keeping original review (${err instanceof Error ? err.message : String(err)})`);
+            continue;
+        }
         const debateResponse = parseDebateResponse(persona, otherReviews[0], response);
         responses.push(debateResponse);
         if (debateResponse.changedVote) {
