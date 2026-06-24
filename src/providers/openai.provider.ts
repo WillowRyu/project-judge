@@ -37,8 +37,7 @@ export class OpenAIProvider implements LLMProvider {
           content: prompt,
         },
       ],
-      temperature: 0.7,
-      max_tokens: 8192,
+      max_completion_tokens: 8192,
     });
 
     return response.choices[0]?.message?.content ?? "";
