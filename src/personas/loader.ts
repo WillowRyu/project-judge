@@ -122,6 +122,7 @@ export async function loadPersona(
     ...meta,
     guideline: finalGuideline,
     model: config?.model, // 페르소나별 모델 (미지정 시 undefined)
+    provider: config?.provider, // 페르소나별 provider (미지정 시 undefined)
   };
 }
 
