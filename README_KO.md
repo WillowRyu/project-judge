@@ -217,7 +217,9 @@ ignore:
 생성 파일은 기본적으로 무시됩니다 (예: `generated/`, `__generated__/`,
 `.generated.`, `.pb.`, `.g.dart`, `.graphql.dart`, `.designer.cs`).
 
-> **참고:** `rejected` 판정만으로는 워크플로 체크가 실패하지 않습니다. `result` output(`approved` / `rejected` / `skipped` / `error`) 또는 적용된 라벨(예: `magi-changes-requested`)로 머지를 게이팅하세요. 모든 리뷰어가 실패해 정족수를 못 채우면 `result`는 `error`가 되고 액션이 실패합니다.
+> **참고:** `rejected` 판정만으로는 워크플로 체크가 실패하지 않습니다. `result` output(`approved` / `rejected` / `skipped` / `error`) 또는 적용된 라벨(예: `magi-changes-requested`)로 머지를 게이팅하세요.
+>
+> **리뷰 실패는 기권 처리됩니다.** 페르소나의 모델 호출이 실패하면 그 표는 집계에서 **제외**되며, 절대 찬성으로 계산되지 않습니다. 유효 리뷰 수가 `required_approvals`보다 적으면(정족수 미달) `result`는 `error`가 되고 액션이 실패합니다 — 보통 일시적 provider/rate-limit 오류이므로 재실행하면 됩니다.
 
 ## 📱 Slack 알림
 
@@ -314,7 +316,7 @@ personas:
     model: gemini-2.5-flash
 ```
 
-> **참고:** 페르소나별 provider 사용 시 해당 API key를 모두 설정해야 합니다.
+> **참고:** 페르소나별 provider 사용 시 해당 API key를 모두 설정해야 합니다. 액션은 참조된 모든 provider를 시작 시 검증하며, 키가 없으면 명확한 에러로 즉시 실패합니다.
 
 ### 공통 지침 추가
 

@@ -218,7 +218,9 @@ Generated files are ignored by default (for example: `generated/`,
 `__generated__/`, `.generated.`, `.pb.`, `.g.dart`, `.graphql.dart`,
 `.designer.cs`).
 
-> **Note:** A `rejected` result does **not** fail the workflow check by itself. Gate merges using the `result` output (`approved` / `rejected` / `skipped` / `error`) or the applied label (e.g., branch protection on the `magi-changes-requested` label). When every reviewer errors out (quorum not reached), `result` is `error` and the action fails.
+> **Note:** A `rejected` result does **not** fail the workflow check by itself. Gate merges using the `result` output (`approved` / `rejected` / `skipped` / `error`) or the applied label (e.g., branch protection on the `magi-changes-requested` label).
+>
+> **Failed reviews abstain.** If a persona's model call fails, that vote is **excluded** from the tally — it never counts as an approval. If fewer valid reviews remain than `required_approvals` (quorum not reached), `result` is `error` and the action fails; just re-run it (usually a transient provider or rate-limit error).
 
 ## 📱 Slack Notifications
 
@@ -315,7 +317,7 @@ personas:
     model: gemini-2.5-flash
 ```
 
-> **Note:** Provide all required API keys when using per-persona providers.
+> **Note:** Provide all required API keys when using per-persona providers. The action validates every referenced provider up front and fails fast with a clear error if a key is missing.
 
 ### Common Guidelines
 
