@@ -72,8 +72,16 @@ export function buildSlackMessage(
   votingSummary: VotingSummary,
   commentUrl?: string,
 ): SlackMessage {
-  const resultEmoji = votingSummary.passed ? "✅" : "❌";
-  const resultText = votingSummary.passed ? "승인" : "거부";
+  const resultEmoji = votingSummary.undetermined
+    ? "⚠️"
+    : votingSummary.passed
+      ? "✅"
+      : "❌";
+  const resultText = votingSummary.undetermined
+    ? "판정 불가"
+    : votingSummary.passed
+      ? "승인"
+      : "거부";
 
   // 투표 결과 필드 생성
   const voteFields = reviews.map((review) => ({

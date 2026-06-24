@@ -321,6 +321,7 @@ describe("index fail-open post actions", () => {
   it("fails the action and skips labels when reviews are undetermined", async () => {
     const result = await runActionScenario({ undetermined: true, expectResult: "error" });
     expect(result.setFailed).toHaveBeenCalled();
+    expect(readOutput(result.setOutput, "result")).toBe("error");
     expect(readOutput(result.setOutput, "labels_status")).toBe("skipped");
   });
 });
