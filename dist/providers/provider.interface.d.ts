@@ -8,8 +8,9 @@ export interface LLMProvider {
     reviewWithModel?(prompt: string, model: string): Promise<string>;
     getDefaultModel?(): string;
 }
+export type ProviderType = "gemini" | "openai" | "claude";
 export interface ProviderConfig {
-    type: "gemini" | "openai" | "claude";
+    type: ProviderType;
     apiKey?: string;
     gcpProjectId?: string;
     gcpLocation?: string;

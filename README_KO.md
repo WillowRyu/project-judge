@@ -217,6 +217,8 @@ ignore:
 생성 파일은 기본적으로 무시됩니다 (예: `generated/`, `__generated__/`,
 `.generated.`, `.pb.`, `.g.dart`, `.graphql.dart`, `.designer.cs`).
 
+> **참고:** `rejected` 판정만으로는 워크플로 체크가 실패하지 않습니다. `result` output(`approved` / `rejected` / `skipped` / `error`) 또는 적용된 라벨(예: `magi-changes-requested`)로 머지를 게이팅하세요. 모든 리뷰어가 실패해 정족수를 못 채우면 `result`는 `error`가 되고 액션이 실패합니다.
+
 ## 📱 Slack 알림
 
 리뷰 결과를 Slack 채널로 전송합니다.

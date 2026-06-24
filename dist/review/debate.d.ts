@@ -1,4 +1,4 @@
-import { LLMProvider } from "../providers/provider.interface";
+import { ProviderRegistry } from "../providers/registry";
 import { Persona, ReviewResult, VoteResult } from "../personas/persona.interface";
 import { PRContext } from "./orchestrator";
 /**
@@ -31,9 +31,9 @@ export declare function needsDebate(reviews: ReviewResult[], config?: DebateConf
 /**
  * 토론 라운드 실행
  */
-export declare function runDebateRound(provider: LLMProvider, personas: Persona[], reviews: ReviewResult[], context: PRContext, round: number): Promise<DebateRoundResult>;
+export declare function runDebateRound(registry: ProviderRegistry, personas: Persona[], reviews: ReviewResult[], context: PRContext, round: number): Promise<DebateRoundResult>;
 /**
  * 전체 토론 프로세스 실행
  */
-export declare function runDebate(provider: LLMProvider, personas: Persona[], reviews: ReviewResult[], context: PRContext, config?: DebateConfig): Promise<ReviewResult[]>;
+export declare function runDebate(registry: ProviderRegistry, personas: Persona[], reviews: ReviewResult[], context: PRContext, config?: DebateConfig): Promise<ReviewResult[]>;
 //# sourceMappingURL=debate.d.ts.map

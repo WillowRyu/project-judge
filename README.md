@@ -218,6 +218,8 @@ Generated files are ignored by default (for example: `generated/`,
 `__generated__/`, `.generated.`, `.pb.`, `.g.dart`, `.graphql.dart`,
 `.designer.cs`).
 
+> **Note:** A `rejected` result does **not** fail the workflow check by itself. Gate merges using the `result` output (`approved` / `rejected` / `skipped` / `error`) or the applied label (e.g., branch protection on the `magi-changes-requested` label). When every reviewer errors out (quorum not reached), `result` is `error` and the action fails.
+
 ## 📱 Slack Notifications
 
 Send review results to Slack channel.
