@@ -28,13 +28,13 @@
     "minimatch": "^10.2.6",
     "openai": "^7.9.0",
     "yaml": "^2.9.0",
-    "zod": "^3.25.76"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
+    "@types/node": "^26.4.0",
     "@vercel/ncc": "^0.45.0",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
     "vitest": "^4.1.11"
   },
   "engines": {
