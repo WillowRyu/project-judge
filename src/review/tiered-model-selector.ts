@@ -18,14 +18,14 @@ export interface ModelTier {
 // 기본 모델 설정
 const DEFAULT_MODELS = {
   gcp: {
-    small: "gemini-2.5-flash-lite",
-    medium: "gemini-2.5-flash", // Context Caching 지원
-    large: "gemini-3-pro-preview",
+    small: "gemini-3.5-flash-lite",
+    medium: "gemini-3.5-flash",
+    large: "gemini-3.5-flash",
   },
   "api-key": {
-    small: "gemini-2.5-flash-lite",
-    medium: "gemini-2.5-flash",
-    large: "gemini-2.5-pro",
+    small: "gemini-3.5-flash-lite",
+    medium: "gemini-3.5-flash",
+    large: "gemini-3.5-flash",
   },
 } as const;
 

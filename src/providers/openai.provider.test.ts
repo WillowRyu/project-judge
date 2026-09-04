@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const create = vi.fn().mockResolvedValue({ choices: [{ message: { content: "ok" } }] });
+const create = vi.fn().mockResolvedValue({ output_text: "ok", status: "completed" });
 
 vi.mock("openai", () => ({
   default: class {
-    chat = { completions: { create } };
+    responses = { create };
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     constructor(_opts: unknown) {}
   },
@@ -13,15 +13,28 @@ vi.mock("openai", () => ({
 import { OpenAIProvider } from "./openai.provider";
 
 describe("OpenAIProvider", () => {
-  it("uses max_completion_tokens and omits the temperature override", async () => {
-    const p = new OpenAIProvider("key", "gpt-5.2");
+  beforeEach(() => create.mockClear());
+
+  it("uses the Responses API with non-persisted input", async () => {
+    const p = new OpenAIProvider("key", "gpt-5.5");
     const out = await p.review("hi");
     expect(out).toBe("ok");
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "gpt-5.2", max_completion_tokens: 8192 }),
+      { model: "gpt-5.5", input: "hi", max_output_tokens: 8192, store: false },
     );
-    const arg = create.mock.calls[0][0];
-    expect(arg).not.toHaveProperty("temperature");
-    expect(arg).not.toHaveProperty("max_tokens");
+  });
+
+  it("rejects incomplete or empty Responses API output", async () => {
+    create.mockResolvedValueOnce({ output_text: "", status: "incomplete" });
+    const p = new OpenAIProvider("key");
+
+    await expect(p.review("hi")).rejects.toThrow(/incomplete|empty/i);
+  });
+
+  it("rejects any Responses API status other than completed", async () => {
+    create.mockResolvedValueOnce({ output_text: "partial", status: "failed" });
+    const p = new OpenAIProvider("key");
+
+    await expect(p.review("hi")).rejects.toThrow(/incomplete/i);
   });
 });

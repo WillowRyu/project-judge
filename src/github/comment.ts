@@ -1,12 +1,13 @@
 import { ReviewResult, VotingSummary } from "../personas/persona.interface";
+import type { AnalyzedDiff } from "../review/diff-analyzer";
 import { getVoteEmoji, getVoteResultString } from "../review/voter";
 
 /**
  * 투표 결과 표시 (변경된 경우 before→after 형식)
  */
-function formatVoteDisplay(review: ReviewResult): string {
+function formatVoteDisplay(review: ReviewResult, language: "ko" | "en" = "ko"): string {
   if (review.error) {
-    return "⚠️ 리뷰 실패 (집계 제외)";
+    return language === "en" ? "⚠️ Review failed (abstained)" : "⚠️ 리뷰 실패 (집계 제외)";
   }
 
   const currentEmoji = getVoteEmoji(review.vote);
@@ -84,6 +85,9 @@ function formatObjectAsMarkdown(
 export interface CommentOptions {
   style: "summary" | "detailed";
   includeActionItems: boolean;
+  language?: "ko" | "en";
+  coverage?: AnalyzedDiff["coverage"];
+  headSha?: string;
 }
 
 /**
@@ -95,19 +99,32 @@ export function generateComment(
   options: CommentOptions = { style: "detailed", includeActionItems: true },
 ): string {
   const lines: string[] = [];
+  const english = options.language === "en";
 
   // 헤더
-  lines.push("## 🏛️ MAGI 시스템 리뷰 결과\n");
+  lines.push(english ? "## 🏛️ MAGI review results\n" : "## 🏛️ MAGI 시스템 리뷰 결과\n");
 
   // 최종 결과
-  lines.push(`### ${getVoteResultString(votingSummary)}\n`);
+  lines.push(`### ${getVoteResultString(votingSummary, options.language)}\n`);
+
+  if (options.headSha) lines.push(`${english ? "Reviewed commit" : "검토 커밋"}: \`${options.headSha}\`\n`);
+  if (options.coverage) {
+    const coverage = options.coverage;
+    lines.push(`${english ? "Review coverage" : "검토 범위"}: ${coverage.reviewedFiles}/${coverage.totalFiles} ${english ? "files" : "파일"}\n`);
+    if (!coverage.complete) {
+      lines.push(english ? "> ⚠️ Incomplete review: missing or truncated code prevents approval." : "> ⚠️ 누락되거나 잘린 코드가 있어 승인할 수 없습니다.");
+      if (coverage.omittedFiles.length) lines.push(`${english ? "Missing diff" : "Diff 누락"}: ${coverage.omittedFiles.map(file => `\`${file}\``).join(", ")}`);
+      if (coverage.truncatedFiles.length) lines.push(`${english ? "Truncated diff" : "Diff 잘림"}: ${coverage.truncatedFiles.map(file => `\`${file}\``).join(", ")}`);
+      lines.push("");
+    }
+  }
 
   // 투표 테이블
-  lines.push("| 페르소나 | 판정 | 핵심 이유 |");
+  lines.push(english ? "| Reviewer | Verdict | Reason |" : "| 페르소나 | 판정 | 핵심 이유 |");
   lines.push("|:-------:|:----:|----------|");
 
   for (const review of reviews) {
-    const voteDisplay = formatVoteDisplay(review);
+    const voteDisplay = formatVoteDisplay(review, options.language);
     lines.push(
       `| ${review.personaEmoji} ${review.personaName} | ${voteDisplay} | ${review.reason} |`,
     );
@@ -119,10 +136,10 @@ export function generateComment(
   // ========================================
   if (options.style === "detailed") {
     lines.push("---");
-    lines.push("## 📝 상세 분석\n");
+    lines.push(english ? "## 📝 Detailed analysis\n" : "## 📝 상세 분석\n");
 
     for (const review of reviews) {
-      const voteDisplay = formatVoteDisplay(review);
+      const voteDisplay = formatVoteDisplay(review, options.language);
       lines.push(`<details>`);
       lines.push(
         `<summary><strong>${review.personaEmoji} ${review.personaName}</strong> (${voteDisplay})</summary>`,
@@ -133,14 +150,14 @@ export function generateComment(
       // 코드 리뷰 내용 (details가 JSON이면 포맷팅)
       if (review.details) {
         const formattedDetails = formatReviewDetails(review.details);
-        lines.push(`### 🔍 코드 리뷰: ${review.personaName}\n`);
+        lines.push(`### 🔍 ${english ? "Code review" : "코드 리뷰"}: ${review.personaName}\n`);
         lines.push(formattedDetails);
       }
 
       // 토론 응답이 있으면 표시
       if (review.debateResponse) {
         lines.push("\n---\n");
-        lines.push(`### 🗣️ 토론 의견\n`);
+        lines.push(english ? "### 🗣️ Discussion\n" : "### 🗣️ 토론 의견\n");
         lines.push(`> ${review.debateResponse}\n`);
       }
 
@@ -154,7 +171,7 @@ export function generateComment(
   const suggestionsByPersona = groupSuggestionsByPersona(reviews);
   if (suggestionsByPersona.length > 0) {
     lines.push("---");
-    lines.push("## 💡 개선 제안\n");
+    lines.push(english ? "## 💡 Suggestions\n" : "## 💡 개선 제안\n");
 
     for (const {
       personaEmoji,
@@ -164,18 +181,18 @@ export function generateComment(
     } of suggestionsByPersona) {
       lines.push(`<details>`);
       lines.push(
-        `<summary><strong>${personaEmoji} ${personaName}</strong> (${suggestions.length}개 제안)</summary>`,
+        `<summary><strong>${personaEmoji} ${personaName}</strong> (${suggestions.length}${english ? " suggestions" : "개 제안"})</summary>`,
       );
       lines.push(""); // 빈 줄 추가
       lines.push("<br>\n"); // 추가 간격
 
       // 판정 이유 포함
       if (reason) {
-        lines.push(`> 💬 **판정 이유:** ${reason}\n`);
+        lines.push(`> 💬 **${english ? "Reason" : "판정 이유"}:** ${reason}\n`);
       }
 
       // 테이블 형식으로 제안 표시
-      lines.push("| # | 제안 내용 |");
+      lines.push(english ? "| # | Suggestion |" : "| # | 제안 내용 |");
       lines.push("|---|----------|");
       for (let i = 0; i < suggestions.length; i++) {
         lines.push(`| ${i + 1} | ${suggestions[i]} |`);
@@ -192,7 +209,7 @@ export function generateComment(
     const actionItems = extractActionItems(reviews);
     if (actionItems.length > 0) {
       lines.push("---");
-      lines.push("## 📋 액션 아이템\n");
+      lines.push(english ? "## 📋 Action items\n" : "## 📋 액션 아이템\n");
       for (const item of actionItems) {
         lines.push(`- [ ] ${item}`);
       }
@@ -203,7 +220,7 @@ export function generateComment(
   // 푸터
   lines.push("---");
   lines.push(
-    "*이 리뷰는 [MAGI Review](https://github.com/WillowRyu/project-judge) 시스템에 의해 자동 생성되었습니다.*",
+    english ? "*Generated by [MAGI Review](https://github.com/WillowRyu/project-judge).*" : "*이 리뷰는 [MAGI Review](https://github.com/WillowRyu/project-judge) 시스템에 의해 자동 생성되었습니다.*",
   );
 
   return lines.join("\n");

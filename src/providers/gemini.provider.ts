@@ -21,6 +21,7 @@ interface CachedContext {
   cacheId: string;
   model: string;
   createdAt: Date;
+  client: GoogleGenAI;
 }
 
 export class GeminiProvider implements LLMProvider {
@@ -28,6 +29,7 @@ export class GeminiProvider implements LLMProvider {
   private config: GeminiConfig;
   private client: GoogleGenAI;
   private cachedContext?: CachedContext;
+  private readonly hasExplicitGcpLocation: boolean;
 
   /**
    * 모델에 따라 적절한 location 반환
@@ -43,9 +45,8 @@ export class GeminiProvider implements LLMProvider {
 
   constructor(config: GeminiConfig) {
     // 모드별 기본 모델 설정
-    // GCP: gemini-3-pro-preview (global 지원), API Key: gemini-2.5-flash (빠른 속도)
-    const defaultModel =
-      config.mode === "gcp" ? "gemini-3-pro-preview" : "gemini-2.5-flash";
+    // Use the same stable baseline for Vertex AI and the Developer API.
+    const defaultModel = "gemini-3.5-flash";
 
     const model = config.model ?? defaultModel;
 
@@ -53,6 +54,7 @@ export class GeminiProvider implements LLMProvider {
     const location =
       config.gcpLocation ?? GeminiProvider.getLocationForModel(model);
 
+    this.hasExplicitGcpLocation = Boolean(config.gcpLocation);
     this.config = {
       ...config,
       model: model,
@@ -66,6 +68,7 @@ export class GeminiProvider implements LLMProvider {
       }
       this.client = new GoogleGenAI({
         apiKey: config.apiKey,
+        httpOptions: { timeout: 120_000 },
       });
     } else if (config.mode === "gcp") {
       if (!config.gcpProjectId) {
@@ -76,6 +79,7 @@ export class GeminiProvider implements LLMProvider {
         vertexai: true,
         project: config.gcpProjectId,
         location: this.config.gcpLocation!,
+        httpOptions: { timeout: 120_000 },
       });
     } else {
       throw new Error("Invalid mode");
@@ -168,12 +172,14 @@ export class GeminiProvider implements LLMProvider {
 
     if (
       this.config.mode === "gcp" &&
+      !this.hasExplicitGcpLocation &&
       modelLocation !== this.config.gcpLocation
     ) {
       clientToUse = new GoogleGenAI({
         vertexai: true,
         project: this.config.gcpProjectId!,
         location: modelLocation,
+        httpOptions: { timeout: 120_000 },
       });
     }
 
@@ -189,7 +195,13 @@ export class GeminiProvider implements LLMProvider {
         },
       });
 
-      return response.text ?? "";
+      if (response.candidates?.some((candidate) => candidate.finishReason === "MAX_TOKENS")) {
+        throw new Error("Gemini response was incomplete");
+      }
+      if (!response.text?.trim()) {
+        throw new Error("Gemini response was empty");
+      }
+      return response.text;
     });
   }
 
@@ -224,6 +236,7 @@ export class GeminiProvider implements LLMProvider {
 
       if (
         this.config.mode === "gcp" &&
+        !this.hasExplicitGcpLocation &&
         modelLocation !== this.config.gcpLocation
       ) {
         console.log(`  Using ${modelLocation} location for caching`);
@@ -231,6 +244,7 @@ export class GeminiProvider implements LLMProvider {
           vertexai: true,
           project: this.config.gcpProjectId!,
           location: modelLocation,
+          httpOptions: { timeout: 120_000 },
         });
       }
 
@@ -253,15 +267,13 @@ export class GeminiProvider implements LLMProvider {
         cacheId,
         model,
         createdAt: new Date(),
+        client: clientToUse,
       };
 
       console.log(`  Context cache created: ${cacheId}`);
       return cacheId;
-    } catch (error) {
-      console.warn(
-        "  Context caching not available, using direct calls:",
-        error,
-      );
+    } catch {
+      console.warn("  Context caching not available; using direct calls.");
       return "";
     }
   }
@@ -288,12 +300,14 @@ export class GeminiProvider implements LLMProvider {
 
       if (
         this.config.mode === "gcp" &&
+        !this.hasExplicitGcpLocation &&
         modelLocation !== this.config.gcpLocation
       ) {
         clientToUse = new GoogleGenAI({
           vertexai: true,
           project: this.config.gcpProjectId!,
           location: modelLocation,
+          httpOptions: { timeout: 120_000 },
         });
       }
 
@@ -311,10 +325,16 @@ export class GeminiProvider implements LLMProvider {
         });
       });
 
-      return response.text ?? "";
+      if (response.candidates?.some((candidate) => candidate.finishReason === "MAX_TOKENS")) {
+        throw new Error("Gemini response was incomplete");
+      }
+      if (!response.text?.trim()) {
+        throw new Error("Gemini response was empty");
+      }
+      return response.text;
     } catch (error) {
-      console.warn("  Cache usage failed, falling back to direct call:", error);
-      return this.reviewWithModel(personaPrompt, model);
+      // The orchestrator owns the full PR prompt, so it can safely retry there.
+      throw error;
     }
   }
 
@@ -324,7 +344,7 @@ export class GeminiProvider implements LLMProvider {
   async clearCache(): Promise<void> {
     if (this.cachedContext?.cacheId) {
       try {
-        await this.client.caches.delete({ name: this.cachedContext.cacheId });
+        await this.cachedContext.client.caches.delete({ name: this.cachedContext.cacheId });
         console.log("  Context cache cleared");
       } catch {
         // 삭제 실패해도 무시 (TTL로 자동 삭제됨)

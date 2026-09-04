@@ -262,3 +262,61 @@ describe("needsDebate", () => {
     expect(needsDebate(reviews, debateConfig({ trigger: "always" }))).toBe(true);
   });
 });
+
+describe("runDebate contract", () => {
+  it("runs an always-triggered debate for unanimous reviews and provides the persona, own review, and actual diff", async () => {
+    const prompts: string[] = [];
+    const def = fakeProvider("gemini", async (value) => {
+      prompts.push(value);
+      return APPROVE_DEBATE_JSON;
+    });
+    const context = ctx();
+    context.language = "en";
+    context.diff.compressedDiff = "@@ -1 +1\n+const actualDiff = true;";
+    await runDebate(
+      registryOf(def),
+      [persona("a"), persona("b")],
+      [review("a"), review("b")],
+      context,
+      debateConfig({ trigger: "always" }),
+    );
+
+    const aPrompt = prompts.find((value) => value.includes("GUIDE_a"))!;
+    expect(aPrompt).toContain("reason_a");
+    expect(aPrompt).toContain("details_a");
+    expect(aPrompt).toContain("actualDiff");
+    expect(aPrompt.trim()).toMatch(/Respond in English\.$/);
+  });
+
+  it("keeps the original vote when revoting after debate is disabled", async () => {
+    const def = fakeProvider(
+      "gemini",
+      async () => '```json\n{"response":"changed","changedVote":"reject","newReason":"new"}\n```',
+    );
+    const result = await runDebate(
+      registryOf(def),
+      [persona("a"), persona("b")],
+      [review("a"), review("b", { vote: "reject" })],
+      ctx(),
+      debateConfig({ revoteAfterDebate: false }),
+    );
+
+    expect(result.find((item) => item.personaId === "a")?.vote).toBe("approve");
+  });
+
+  it("rejects a debate response with an invalid changedVote enum", async () => {
+    const def = fakeProvider(
+      "gemini",
+      async () => '```json\n{"response":"changed","changedVote":"invented","newReason":"new"}\n```',
+    );
+    const result = await runDebate(
+      registryOf(def),
+      [persona("a"), persona("b")],
+      [review("a"), review("b", { vote: "reject" })],
+      ctx(),
+      debateConfig(),
+    );
+
+    expect(result.find((item) => item.personaId === "a")?.vote).toBe("approve");
+  });
+});

@@ -24,7 +24,7 @@ export async function postOrUpdateComment(
   );
 
   // 기존 MAGI 코멘트 찾기 (코멘트가 많은 PR을 위해 전체 페이지 조회)
-  const comments = await client.octokit.paginate(
+  const comments: Array<{id:number;body?:string | null;user?:{type?:string} | null}> = await client.octokit.paginate(
     client.octokit.rest.issues.listComments,
     {
       owner: client.owner,
@@ -35,7 +35,7 @@ export async function postOrUpdateComment(
   );
 
   const existingComment = comments.find((comment) =>
-    comment.body?.includes(marker),
+    comment.user?.type === "Bot" && comment.body?.includes(marker),
   );
 
   if (existingComment) {

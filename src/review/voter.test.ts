@@ -64,4 +64,14 @@ describe("getVoteResultString", () => {
     );
     expect(getVoteResultString(s)).toContain("판정 불가");
   });
+
+  it("localizes incomplete review coverage before reporting the vote", () => {
+    const summary = {
+      ...countVotes([r("approve"), r("approve")]),
+      incomplete: true,
+    };
+
+    expect(getVoteResultString(summary)).toBe("⚠️ 검토 범위 불완전");
+    expect(getVoteResultString(summary, "en")).toBe("⚠️ Incomplete review");
+  });
 });

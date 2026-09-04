@@ -1,21 +1,13 @@
-# MAGI Review 설정
 version: 1
-
-# Provider 설정
 provider:
   type: gemini
-  # model: gemini-2.5-flash  # 기본값 사용
-
-# 투표 설정
 voting:
   required_approvals: 2
-
-# 토론 기능 (Phase 2)
+  fail_on_rejection: false
 debate:
   enabled: false
-
-# 출력 설정
 output:
+  language: ko
   pr_comment:
     enabled: true
     style: detailed

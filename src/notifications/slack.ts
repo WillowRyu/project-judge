@@ -9,6 +9,7 @@ import { getVoteEmoji } from "../review/voter";
 export interface SlackNotifyConfig {
   webhookUrl: string;
   notifyOn: "all" | "rejection" | "approval";
+  language?: "ko" | "en";
 }
 
 interface SlackBlock {
@@ -38,6 +39,7 @@ export function shouldNotify(
   notifyOn: "all" | "rejection" | "approval",
 ): boolean {
   if (notifyOn === "all") return true;
+  if (votingSummary.undetermined || votingSummary.incomplete) return false;
   if (notifyOn === "approval" && votingSummary.passed) return true;
   if (notifyOn === "rejection" && !votingSummary.passed) return true;
   return false;
@@ -71,22 +73,26 @@ export function buildSlackMessage(
   reviews: ReviewResult[],
   votingSummary: VotingSummary,
   commentUrl?: string,
+  language: "ko" | "en" = "ko",
 ): SlackMessage {
+  const english = language === "en";
   const resultEmoji = votingSummary.undetermined
     ? "⚠️"
     : votingSummary.passed
       ? "✅"
       : "❌";
-  const resultText = votingSummary.undetermined
-    ? "판정 불가"
-    : votingSummary.passed
-      ? "승인"
-      : "거부";
+  const resultText = votingSummary.incomplete
+    ? (english ? "Incomplete review" : "검토 범위 불완전")
+    : votingSummary.undetermined
+      ? (english ? "Undetermined" : "판정 불가")
+      : votingSummary.passed
+        ? (english ? "Approved" : "승인")
+        : (english ? "Rejected" : "거부");
 
   // 투표 결과 필드 생성
   const voteFields = reviews.map((review) => ({
     type: "mrkdwn" as const,
-    text: `${review.personaEmoji} *${review.personaName}*\n${formatVoteForSlack(review)} ${review.error ? "리뷰 실패" : review.vote}`,
+    text: `${review.personaEmoji} *${review.personaName}*\n${formatVoteForSlack(review)} ${review.error ? (english ? "Review failed" : "리뷰 실패") : review.vote}`,
   }));
 
   const blocks: SlackBlock[] = [
@@ -95,7 +101,7 @@ export function buildSlackMessage(
       type: "header",
       text: {
         type: "plain_text",
-        text: "🏛️ MAGI 리뷰 결과",
+        text: english ? "🏛️ MAGI review results" : "🏛️ MAGI 리뷰 결과",
         emoji: true,
       },
     },
@@ -112,7 +118,7 @@ export function buildSlackMessage(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `${resultEmoji} *${resultText}* (${votingSummary.approvals}/${votingSummary.validVoters}, ${votingSummary.requiredApprovals}표 필요${votingSummary.errored > 0 ? `, ${votingSummary.errored} 실패` : ""})`,
+        text: `${resultEmoji} *${resultText}* (${votingSummary.approvals}/${votingSummary.validVoters}, ${votingSummary.requiredApprovals}${english ? " required" : "표 필요"}${votingSummary.errored > 0 ? `, ${votingSummary.errored}${english ? " failed" : " 실패"}` : ""})`,
       },
     },
     // 구분선
@@ -136,7 +142,7 @@ export function buildSlackMessage(
       type: "button",
       text: {
         type: "plain_text",
-        text: "📋 PR 보기",
+        text: english ? "📋 View PR" : "📋 PR 보기",
         emoji: true,
       },
       url: prUrl,
@@ -149,7 +155,7 @@ export function buildSlackMessage(
       type: "button",
       text: {
         type: "plain_text",
-        text: "🔍 상세 리뷰 보기",
+        text: english ? "🔍 View review" : "🔍 상세 리뷰 보기",
         emoji: true,
       },
       url: commentUrl,
@@ -177,6 +183,7 @@ export async function sendSlackNotification(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(message),
+    signal: AbortSignal.timeout(15000),
   });
 
   if (!response.ok) {
@@ -215,6 +222,7 @@ export async function notifySlack(
     reviews,
     votingSummary,
     commentUrl,
+    config.language,
   );
 
   // 전송

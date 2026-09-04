@@ -1,3 +1,4 @@
+import { MagiConfigSchema } from "./config/schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 type Scenario = {
@@ -8,7 +9,14 @@ type Scenario = {
   slackWebhookInput?: string;
   slackWebhookInConfig?: string;
   slackFails?: boolean;
-  expectResult?: "approved" | "skipped" | "error";
+  slackNotSent?: boolean;
+  unauthorized?: boolean;
+  incomplete?: boolean;
+  changedFiles?: number;
+  rejected?: boolean;
+  failOnRejection?: boolean;
+  missingCredentials?: boolean;
+  expectResult?: "approved" | "rejected" | "skipped" | "error";
   undetermined?: boolean;
   fileDiffs?: Array<{
     filename: string;
@@ -73,7 +81,7 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
     : vi.fn().mockResolvedValue(undefined);
   const notifySlack = scenario.slackFails
     ? vi.fn().mockRejectedValue(new Error("slack failed"))
-    : vi.fn().mockResolvedValue(true);
+    : vi.fn().mockResolvedValue(!scenario.slackNotSent);
   const runReviews = vi.fn().mockResolvedValue([
     {
       personaId: "melchior",
@@ -91,12 +99,18 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
     setOutput,
     setFailed,
     warning,
+    setSecret: vi.fn(),
+  }));
+
+  vi.doMock("./github/security", () => ({
+    authorizeReviewEvent: vi.fn().mockResolvedValue(scenario.unauthorized ? "unauthorized_comment" : undefined),
+    prepareTrustedWorkspace: vi.fn().mockResolvedValue({workspacePath:process.cwd(),cleanup:vi.fn()}),
   }));
 
   vi.doMock("./config/loader", () => ({
-    loadConfig: vi.fn().mockResolvedValue({
+    loadConfig: vi.fn().mockResolvedValue(MagiConfigSchema.parse({
       provider: { type: "gemini" },
-      voting: { required_approvals: 2 },
+      voting: { required_approvals: 2, fail_on_rejection: !!scenario.failOnRejection },
       output: {
         pr_comment: { enabled: true, style: "detailed" },
         labels: { enabled: true, approved: "magi-approved", rejected: "magi-rejected" },
@@ -113,12 +127,12 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
           }
         : undefined,
       ignore: { files: [], paths: [] },
-    }),
+    })),
   }));
 
   vi.doMock("./providers", () => ({
     createProvider: vi.fn(),
-    hasCredentials: vi.fn().mockReturnValue(true),
+    hasCredentials: vi.fn().mockReturnValue(!scenario.missingCredentials),
     createProviderRegistry: vi.fn().mockReturnValue({
       defaultType: "gemini",
       default: { name: "gemini", review: vi.fn(), reviewWithModel: vi.fn(), getDefaultModel: () => "m" },
@@ -164,6 +178,8 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
       baseBranch: "main",
       headBranch: "feature",
       headSha: "abc",
+      baseSha: "base",
+      changedFiles: scenario.changedFiles ?? scenario.fileDiffs?.length ?? 1,
     }),
     getPullRequestFiles: vi
       .fn()
@@ -180,6 +196,7 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
       ),
     postOrUpdateComment,
     applyLabels,
+    clearLabels: vi.fn().mockResolvedValue(undefined),
     ensureLabelsExist,
   }));
 
@@ -190,6 +207,7 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
       totalAdditions: 3,
       totalDeletions: 1,
       compressedDiff: "@@ -1 +1 @@\n-old\n+new",
+      coverage:{complete:!scenario.incomplete,totalFiles:2,reviewedFiles:1,omittedFiles:scenario.incomplete ? ["binary.png"] : [],truncatedFiles:[]},
     }),
     filterIgnoredFiles: vi.fn((files: unknown[]) => files),
     runReviews,
@@ -214,7 +232,7 @@ async function runActionScenario(scenario: Scenario = {}): Promise<RunResult> {
             errored: 0,
             validVoters: 1,
             undetermined: false,
-            passed: true,
+            passed: !scenario.rejected,
             requiredApprovals: 1,
           },
     ),
@@ -247,7 +265,7 @@ function readOutput(
   setOutputMock: ReturnType<typeof vi.fn>,
   key: string,
 ): unknown {
-  const call = setOutputMock.mock.calls.find(([name]) => name === key);
+  const call = setOutputMock.mock.calls.findLast(([name]) => name === key);
   return call?.[1];
 }
 
@@ -324,4 +342,40 @@ describe("index fail-open post actions", () => {
     expect(readOutput(result.setOutput, "result")).toBe("error");
     expect(readOutput(result.setOutput, "labels_status")).toBe("skipped");
   });
+});
+
+describe("trusted execution and truthful outcomes", () => {
+  it("skips an unauthorized commenter before provider calls or publishing", async () => {
+    const r = await runActionScenario({unauthorized:true,expectResult:"skipped"});
+    expect(r.runReviews).not.toHaveBeenCalled();
+    expect(r.postOrUpdateComment).not.toHaveBeenCalled();
+    expect(readOutput(r.setOutput,"skip_reason")).toBe("unauthorized_comment");
+  });
+  it("fails an incomplete review instead of publishing approval labels", async () => {
+    const r = await runActionScenario({incomplete:true,expectResult:"error"});
+    expect(r.setFailed).toHaveBeenCalled();
+    expect(r.applyLabels).not.toHaveBeenCalled();
+    expect(JSON.parse(String(readOutput(r.setOutput,"coverage")))).toMatchObject({complete:false,omittedFiles:["binary.png"]});
+  });
+  it("reports a filtered Slack notification as skipped", async () => {
+    const r = await runActionScenario({slackEnabled:true,slackWebhookInput:"https://hooks.slack.com/services/test",slackNotSent:true});
+    expect(readOutput(r.setOutput,"slack_status")).toBe("skipped");
+  });
+  it("sets the error output for credential failures", async () => {
+    const r = await runActionScenario({missingCredentials:true,expectResult:"error"});
+    expect(r.runReviews).not.toHaveBeenCalled();
+    expect(r.setFailed).toHaveBeenCalled();
+  });
+  it("allows explicit rejection gating while preserving rejected output", async () => {
+    const r = await runActionScenario({rejected:true,failOnRejection:true,expectResult:"rejected"});
+    expect(r.setFailed).toHaveBeenCalled();
+  });
+});
+
+it("fails before reviewing when GitHub omitted files from the PR listing",async()=>{
+  const r=await runActionScenario({changedFiles:3001,expectResult:"error"});
+  expect(r.runReviews).not.toHaveBeenCalled();
+  expect(r.applyLabels).not.toHaveBeenCalled();
+  expect(r.setFailed).toHaveBeenCalled();
+  expect(JSON.parse(String(readOutput(r.setOutput,"coverage")))).toMatchObject({complete:false,totalFiles:3001,unavailableFiles:3000});
 });

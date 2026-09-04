@@ -1,10 +1,6 @@
 import { minimatch } from "minimatch";
 
-/**
- * Diff Analyzer
- * PR의 변경사항을 분석하고 토큰 최적화를 위해 압축
- */
-
+/** Diff analysis and bounded prompt preparation. Token counts are estimates, not billing figures. */
 export interface FileDiff {
   filename: string;
   status: "added" | "modified" | "removed" | "renamed";
@@ -13,203 +9,216 @@ export interface FileDiff {
   patch?: string;
 }
 
+export interface DiffCoverage {
+  complete: boolean;
+  totalFiles: number;
+  reviewedFiles: number;
+  omittedFiles: string[];
+  truncatedFiles: string[];
+}
+
 export interface AnalyzedDiff {
   summary: string;
   files: FileDiff[];
   totalAdditions: number;
   totalDeletions: number;
   compressedDiff: string;
+  coverage?: DiffCoverage;
 }
 
-/**
- * PR Diff를 분석 가능한 형태로 변환
- */
-export function analyzeDiff(files: FileDiff[]): AnalyzedDiff {
-  const totalAdditions = files.reduce((sum, f) => sum + f.additions, 0);
-  const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);
+export interface AnalyzeDiffOptions {
+  /** Estimated token budget for the entire prepared diff. Default: 30,000. */
+  maxTotalTokens?: number;
+  /** Estimated token budget for one file's prepared diff. Default: 2,500. */
+  maxTokensPerFile?: number;
+  /** Preserve unchanged context when possible. Default: true (changed lines only). */
+  compress?: boolean;
+}
 
-  // 파일별 요약 생성
+const DEFAULT_TOTAL_TOKENS = 30_000;
+const DEFAULT_FILE_TOKENS = 2_500;
+
+/** Conservative UTF-8 estimate for prompt bounding, not precise provider billing. */
+export function estimateTokenCount(text: string): number {
+  return Math.ceil(Buffer.byteLength(text, "utf8") / 3);
+}
+
+function relevantLines(patch: string, compress: boolean): string[] {
+  const lines = patch.split("\n");
+  return compress
+    ? lines.filter(
+        (line) =>
+          line.startsWith("+") || line.startsWith("-") || line.startsWith("@@"),
+      )
+    : lines;
+}
+
+function patchAppearsTruncated(file: FileDiff): boolean {
+  if (!file.patch) return false;
+  let additions = 0;
+  let deletions = 0;
+  let insideHunk = false;
+  for (const line of file.patch.split("\n")) {
+    if (line.startsWith("@@")) {
+      insideHunk = true;
+      continue;
+    }
+    if (line.startsWith("+") && (insideHunk || !line.startsWith("+++"))) additions += 1;
+    if (line.startsWith("-") && (insideHunk || !line.startsWith("---"))) deletions += 1;
+  }
+  return additions < file.additions || deletions < file.deletions;
+}
+
+interface BoundedText {
+  text: string;
+  truncated: boolean;
+  hasContent: boolean;
+}
+
+function fitLines(lines: string[], maxTokens: number): BoundedText {
+  const full = lines.join("\n");
+  if (estimateTokenCount(full) <= maxTokens) {
+    return { text: full, truncated: false, hasContent: lines.length > 0 };
+  }
+
+  const marker = "[... diff truncated by estimated token budget ...]";
+  if (estimateTokenCount(marker) > maxTokens) {
+    return { text: "", truncated: true, hasContent: false };
+  }
+  const selected: number[] = [];
+  let left = 0;
+  let right = lines.length - 1;
+
+  // Select by index so repeated source lines at distinct positions are never deduplicated.
+  while (left <= right) {
+    const candidates = left === right ? [left] : [left, right];
+    let added = false;
+    for (const index of candidates) {
+      const next = [...selected, index]
+        .sort((a, b) => a - b)
+        .map((lineIndex) => lines[lineIndex]);
+      if (estimateTokenCount([...next, marker].join("\n")) <= maxTokens) {
+        selected.push(index);
+        added = true;
+      }
+    }
+    if (!added) break;
+    left += 1;
+    right -= 1;
+  }
+
+  const ordered = [...new Set(selected)]
+    .sort((a, b) => a - b)
+    .map((index) => lines[index]);
+  return {
+    text: [...ordered, marker].join("\n"),
+    truncated: true,
+    hasContent: ordered.length > 0,
+  };
+}
+
+function buildPreparedDiff(
+  files: FileDiff[],
+  maxTotalTokens: number,
+  maxTokensPerFile: number,
+  compress: boolean,
+): { text: string; coverage: DiffCoverage } {
+  const chunks: string[] = [];
+  const omittedFiles: string[] = [];
+  const truncatedFiles: string[] = [];
+  let usedTokens = 0;
+  let reviewedFiles = 0;
+
+  for (const file of files) {
+    if (!file.patch) {
+      omittedFiles.push(file.filename);
+      continue;
+    }
+    const header = `### ${file.filename}`;
+    const separatorTokens = chunks.length === 0 ? 0 : estimateTokenCount("\n\n");
+    const remaining = maxTotalTokens - usedTokens - separatorTokens;
+    const permitted = Math.min(maxTokensPerFile, remaining);
+    if (permitted <= estimateTokenCount(header)) {
+      truncatedFiles.push(file.filename);
+      continue;
+    }
+
+    const bodyBudget = permitted - estimateTokenCount(`${header}\n`);
+    const bounded = fitLines(relevantLines(file.patch, compress), bodyBudget);
+    if (bounded.hasContent) reviewedFiles += 1;
+    const chunk = `${header}\n${bounded.text}`;
+    const actual = fitLines(chunk.split("\n"), permitted);
+    chunks.push(actual.text);
+    usedTokens += separatorTokens + estimateTokenCount(actual.text);
+    if (bounded.truncated || actual.truncated || patchAppearsTruncated(file)) {
+      truncatedFiles.push(file.filename);
+    }
+  }
+
+  return {
+    text: chunks.join("\n\n"),
+    coverage: {
+      complete: omittedFiles.length === 0 && truncatedFiles.length === 0,
+      totalFiles: files.length,
+      reviewedFiles,
+      omittedFiles,
+      truncatedFiles,
+    },
+  };
+}
+
+/** Convert a PR's file list into one already-bounded diff for every downstream review step. */
+export function analyzeDiff(
+  files: FileDiff[],
+  options: AnalyzeDiffOptions = {},
+): AnalyzedDiff {
+  const maxTotalTokens = options.maxTotalTokens ?? DEFAULT_TOTAL_TOKENS;
+  const maxTokensPerFile = options.maxTokensPerFile ?? DEFAULT_FILE_TOKENS;
+  const compress = options.compress ?? true;
+  const totalAdditions = files.reduce((sum, file) => sum + file.additions, 0);
+  const totalDeletions = files.reduce((sum, file) => sum + file.deletions, 0);
   const summary = files
-    .map(
-      (f) => `- ${f.filename} (${f.status}: +${f.additions}/-${f.deletions})`,
-    )
+    .map((file) => `- ${file.filename} (${file.status}: +${file.additions}/-${file.deletions})`)
     .join("\n");
-
-  // 압축된 diff 생성 (핵심 변경사항만)
-  const compressedDiff = compressDiff(files);
+  const prepared = buildPreparedDiff(files, maxTotalTokens, maxTokensPerFile, compress);
 
   return {
     summary,
     files,
     totalAdditions,
     totalDeletions,
-    compressedDiff,
+    compressedDiff: prepared.text,
+    coverage: prepared.coverage,
   };
 }
 
-/**
- * Diff 압축 - 토큰 최적화
- */
-function compressDiff(files: FileDiff[]): string {
-  const chunks: string[] = [];
-
-  for (const file of files) {
-    if (!file.patch) continue;
-
-    // 파일 헤더
-    chunks.push(`\n### ${file.filename}\n`);
-
-    // 변경된 라인만 추출 (컨텍스트 최소화)
-    const lines = file.patch.split("\n");
-    const relevantLines = lines.filter((line) => {
-      // 변경된 라인 또는 hunk 헤더만 포함
-      return (
-        line.startsWith("+") || line.startsWith("-") || line.startsWith("@@")
-      );
-    });
-
-    chunks.push(relevantLines.join("\n"));
-  }
-
-  return chunks.join("\n");
+export function filterIgnoredFiles(files: FileDiff[], ignorePatterns?: string[]): FileDiff[] {
+  if (!ignorePatterns?.length) return files;
+  return files.filter((file) => !ignorePatterns.some((pattern) => matchGlobPattern(file.filename, pattern)));
 }
 
-/**
- * 파일 패턴 필터링
- */
-export function filterIgnoredFiles(
-  files: FileDiff[],
-  ignorePatterns?: string[],
-): FileDiff[] {
-  if (!ignorePatterns || ignorePatterns.length === 0) {
-    return files;
-  }
-
-  return files.filter((file) => {
-    for (const pattern of ignorePatterns) {
-      // 간단한 glob 패턴 매칭
-      if (matchGlobPattern(file.filename, pattern)) {
-        return false;
-      }
-    }
-    return true;
-  });
-}
-
-/**
- * 간단한 glob 패턴 매칭
- */
 function matchGlobPattern(filename: string, pattern: string): boolean {
   const normalizedFilename = filename.replace(/\\/g, "/").trim();
   const normalizedPattern = pattern.replace(/\\/g, "/").trim();
-  if (!normalizedPattern) {
-    return false;
-  }
-
-  const normalizedPatternWithDirWildcard = normalizedPattern.endsWith("/")
+  if (!normalizedPattern) return false;
+  const glob = normalizedPattern.endsWith("/")
     ? `**/${normalizedPattern.replace(/^\/+|\/+$/g, "")}/**`
     : normalizedPattern;
-
-  const hasGlobMagic = /[*?[\]{}()!+@]/.test(normalizedPatternWithDirWildcard);
-
-  // 하위호환: glob 문법이 없는 패턴은 기존처럼 부분 문자열 매칭 유지
-  if (!hasGlobMagic) {
-    return normalizedFilename
-      .toLowerCase()
-      .includes(normalizedPatternWithDirWildcard.toLowerCase());
+  if (!/[*?[\]{}()!+@]/.test(glob)) {
+    return normalizedFilename.toLowerCase().includes(glob.toLowerCase());
   }
-
-  return minimatch(normalizedFilename, normalizedPatternWithDirWildcard, {
-    nocase: true,
-    dot: true,
-    matchBase: true,
-  });
+  return minimatch(normalizedFilename, glob, { nocase: true, dot: true, matchBase: true });
 }
 
-/**
- * 토큰 수 추정 (대략 문자 수 / 4)
- */
-export function estimateTokenCount(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
-/**
- * 압축 필요 여부 판단
- * - 총 토큰 10,000개 초과 OR
- * - 단일 파일 300줄 이상
- */
 export function needsCompression(analyzedDiff: AnalyzedDiff): boolean {
-  const totalTokens = estimateTokenCount(analyzedDiff.compressedDiff);
-  const hasLargeFile = analyzedDiff.files.some(
-    (f) => f.additions + f.deletions > 300,
-  );
-
-  return totalTokens > 10000 || hasLargeFile;
+  return estimateTokenCount(analyzedDiff.compressedDiff) > 10_000 || analyzedDiff.files.some((file) => file.additions + file.deletions > 300);
 }
 
-/**
- * 총 변경된 줄 수 계산 (계층적 리뷰용)
- */
 export function getTotalChangedLines(analyzedDiff: AnalyzedDiff): number {
   return analyzedDiff.totalAdditions + analyzedDiff.totalDeletions;
 }
 
-/**
- * 스마트 압축 - 대형 PR용
- * 변경된 함수/클래스 위주로 컨텍스트 축소
- */
-export function smartCompressDiff(
-  files: FileDiff[],
-  maxTokensPerFile: number = 2500,
-): string {
-  const chunks: string[] = [];
-
-  for (const file of files) {
-    if (!file.patch) continue;
-
-    chunks.push(`\n### ${file.filename}\n`);
-
-    // 토큰 제한 적용
-    const estimatedTokens = estimateTokenCount(file.patch);
-    if (estimatedTokens > maxTokensPerFile) {
-      // 변경된 라인만 추출 + 앞뒤 5줄 컨텍스트
-      const lines = file.patch.split("\n");
-      const compressedLines: string[] = [];
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (
-          line.startsWith("+") ||
-          line.startsWith("-") ||
-          line.startsWith("@@")
-        ) {
-          // 변경 라인 + 앞뒤 5줄
-          const start = Math.max(0, i - 5);
-          const end = Math.min(lines.length, i + 6);
-          for (let j = start; j < end; j++) {
-            if (!compressedLines.includes(lines[j])) {
-              compressedLines.push(lines[j]);
-            }
-          }
-        }
-      }
-      chunks.push(compressedLines.join("\n"));
-      chunks.push(
-        `\n[... ${estimatedTokens - maxTokensPerFile} tokens truncated ...]`,
-      );
-    } else {
-      // 기존 압축 방식
-      const relevantLines = file.patch
-        .split("\n")
-        .filter(
-          (line) =>
-            line.startsWith("+") ||
-            line.startsWith("-") ||
-            line.startsWith("@@"),
-        );
-      chunks.push(relevantLines.join("\n"));
-    }
-  }
-
-  return chunks.join("\n");
+/** Public compatibility helper. It enforces the supplied per-file estimated token budget. */
+export function smartCompressDiff(files: FileDiff[], maxTokensPerFile = DEFAULT_FILE_TOKENS): string {
+  return buildPreparedDiff(files, Number.MAX_SAFE_INTEGER, maxTokensPerFile, true).text;
 }

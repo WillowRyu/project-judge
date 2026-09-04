@@ -14,24 +14,26 @@ inputs:
     description: "GCP Project ID for Vertex AI authentication (enterprise)"
     required: false
   gcp_location:
-    description: "GCP Location for Vertex AI (default: us-central1)"
+    description: "Optional Vertex AI location override; otherwise chosen for the model"
     required: false
-    default: "us-central1"
   openai_api_key:
-    description: "OpenAI API Key for GPT models (GPT-5, GPT-5.2)"
+    description: "OpenAI API key for Responses API models"
     required: false
   anthropic_api_key:
-    description: "Anthropic API Key for Claude models (Claude 4.5)"
+    description: "Anthropic API key for Claude models"
     required: false
   slack_webhook_url:
     description: "Slack Incoming Webhook URL for notifications"
     required: false
   config_path:
-    description: "Path to magi.yml configuration file"
+    description: "Optional repository-relative configuration path, read from the PR base commit"
     required: false
-    default: ".github/magi.yml"
 
 outputs:
+  coverage:
+    description: "JSON diff coverage: complete, totalFiles, reviewedFiles, omittedFiles, truncatedFiles"
+  reviewed_head_sha:
+    description: "PR head commit examined by this run; check result before trusting its verdict"
   result:
     description: "Review result (approved/rejected/skipped/error)"
   skip_reason:
@@ -46,5 +48,5 @@ outputs:
     description: "Slack notification status (success/failed/skipped)"
 
 runs:
-  using: "node20"
+  using: "node24"
   main: "dist/index.js"

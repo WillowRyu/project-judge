@@ -6,7 +6,7 @@ import { LLMProvider } from "./provider.interface";
  * Claude 4.5 Sonnet 등 Anthropic 모델 지원
  */
 
-const DEFAULT_MODEL = "claude-sonnet-4-5-20250929";
+const DEFAULT_MODEL = "claude-sonnet-5";
 
 export class ClaudeProvider implements LLMProvider {
   readonly name = "claude";
@@ -14,7 +14,7 @@ export class ClaudeProvider implements LLMProvider {
   private model: string;
 
   constructor(apiKey: string, model?: string) {
-    this.client = new Anthropic({ apiKey });
+    this.client = new Anthropic({ apiKey, timeout: 120_000 });
     this.model = model ?? DEFAULT_MODEL;
   }
 
@@ -41,8 +41,14 @@ export class ClaudeProvider implements LLMProvider {
     });
 
     // Claude API는 content가 배열로 반환됨
+    if (response.stop_reason === "max_tokens") {
+      throw new Error("Claude response was incomplete");
+    }
     const textContent = response.content.find((block) => block.type === "text");
-    return textContent?.type === "text" ? textContent.text : "";
+    if (textContent?.type !== "text" || !textContent.text.trim()) {
+      throw new Error("Claude response was empty");
+    }
+    return textContent.text;
   }
 
   /**
