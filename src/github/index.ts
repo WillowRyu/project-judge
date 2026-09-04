@@ -13,5 +13,5 @@ export {
   getCommentMarker,
   CommentOptions,
 } from "./comment";
-export { applyLabels, ensureLabelsExist, LabelConfig } from "./labels";
+export { applyLabels, clearLabels, ensureLabelsExist, LabelConfig } from "./labels";
 export { postOrUpdateComment } from "./poster";

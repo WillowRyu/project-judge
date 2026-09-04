@@ -1,0 +1,10 @@
+allowBuilds:
+  esbuild: true
+  protobufjs: false
+  '@google/genai': false
+
+# Patch vulnerable transitive versions without forcing a major upgrade.
+overrides:
+  'rollup@>=4.0.0 <4.59.0': '^4.59.0'
+  'postcss@<8.5.23': '^8.5.23'
+  'nanoid@>=3.0.0 <3.3.18': '^3.3.18'

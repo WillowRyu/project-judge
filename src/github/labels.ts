@@ -36,35 +36,11 @@ export async function applyLabels(
     labelsToRemove.push(labelConfig.approved);
   }
 
-  // 라벨 추가
-  if (labelsToAdd.length > 0) {
-    try {
-      await client.octokit.rest.issues.addLabels({
-        owner: client.owner,
-        repo: client.repo,
-        issue_number: prNumber,
-        labels: labelsToAdd,
-      });
-      console.log(`Added labels: ${labelsToAdd.join(", ")}`);
-    } catch (error) {
-      console.warn(`Failed to add labels: ${error}`);
-    }
-  }
-
-  // 기존 라벨 제거
-  for (const label of labelsToRemove) {
-    try {
-      await client.octokit.rest.issues.removeLabel({
-        owner: client.owner,
-        repo: client.repo,
-        issue_number: prNumber,
-        name: label,
-      });
-      console.log(`Removed label: ${label}`);
-    } catch {
-      // 라벨이 없으면 무시
-    }
-  }
+  // A failed write must reach the caller so labels_status remains truthful.
+  await client.octokit.rest.issues.addLabels({
+    owner: client.owner, repo: client.repo, issue_number: prNumber, labels: labelsToAdd,
+  });
+  for (const name of labelsToRemove) await removeLabel(client, prNumber, name);
 }
 
 /**
@@ -110,4 +86,19 @@ export async function ensureLabelsExist(
       }
     }
   }
+}
+
+async function removeLabel(client: GitHubClient, prNumber: number, name: string): Promise<void> {
+  try {
+    await client.octokit.rest.issues.removeLabel({owner:client.owner,repo:client.repo,issue_number:prNumber,name});
+  } catch (error) {
+    if ((error as {status?:number}).status !== 404) throw error;
+  }
+}
+
+/** Clear stale verdicts when the latest revision was not successfully reviewed. */
+export async function clearLabels(client: GitHubClient, prNumber: number, config: LabelConfig = DEFAULT_LABELS): Promise<void> {
+  const results = await Promise.allSettled([removeLabel(client,prNumber,config.approved), removeLabel(client,prNumber,config.rejected)]);
+  const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (errors.length) throw new AggregateError(errors.map(error => error.reason), 'Failed to clear verdict labels');
 }

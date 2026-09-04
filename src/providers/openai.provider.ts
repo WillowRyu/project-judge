@@ -3,10 +3,10 @@ import { LLMProvider } from "./provider.interface";
 
 /**
  * OpenAI Provider
- * GPT-5.2 등 OpenAI 모델 지원
+ * OpenAI Responses API adapter
  */
 
-const DEFAULT_MODEL = "gpt-5.2";
+const DEFAULT_MODEL = "gpt-5.5";
 
 export class OpenAIProvider implements LLMProvider {
   readonly name = "openai";
@@ -14,7 +14,7 @@ export class OpenAIProvider implements LLMProvider {
   private model: string;
 
   constructor(apiKey: string, model?: string) {
-    this.client = new OpenAI({ apiKey });
+    this.client = new OpenAI({ apiKey, timeout: 120_000 });
     this.model = model ?? DEFAULT_MODEL;
   }
 
@@ -29,18 +29,19 @@ export class OpenAIProvider implements LLMProvider {
    * 특정 모델로 리뷰 수행
    */
   async reviewWithModel(prompt: string, model: string): Promise<string> {
-    const response = await this.client.chat.completions.create({
-      model: model,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      max_completion_tokens: 8192,
+    const response = await this.client.responses.create({
+      model,
+      input: prompt,
+      max_output_tokens: 8192,
+      store: false,
     });
-
-    return response.choices[0]?.message?.content ?? "";
+    if (response.status !== "completed") {
+      throw new Error("OpenAI response was incomplete");
+    }
+    if (!response.output_text?.trim()) {
+      throw new Error("OpenAI response was empty");
+    }
+    return response.output_text;
   }
 
   /**

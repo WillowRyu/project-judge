@@ -1,408 +1,196 @@
 # MAGI Review
 
-🏛️ AI Code Review Bot inspired by Evangelion's MAGI System
+A GitHub Action that reviews pull requests with several AI reviewers, then aggregates their votes. Gemini, OpenAI (Responses API), and Claude are supported, including a different provider per reviewer.
 
-Three personas (MELCHIOR, BALTHASAR, CASPER) evaluate PRs from different perspectives.
-Approves when **2/3 or more** personas agree.
+[한국어 문서](README_KO.md)
 
-## 🎭 Personas
+## Quick start
 
-| Persona          | Role        | Focus                                            | Personality              |
-| ---------------- | ----------- | ------------------------------------------------ | ------------------------ |
-| 🔬 **MELCHIOR**  | Scientist   | Code efficiency, algorithms, bugs, security      | Cold and technical       |
-| 👩‍👧 **BALTHASAR** | Mother      | Maintainability, readability, conventions, tests | Strict but collaborative |
-| 💃 **CASPER**    | Woman/Human | UX/UI consistency, user experience               | Intuitive and emotional  |
-
-## 🚀 Quick Start
-
-Choose from 3 LLM Providers:
-
-| Provider   | Default Model                | Environment Variable                 |
-| :--------- | :--------------------------- | :----------------------------------- |
-| **Gemini** | `gemini-2.5-flash`           | `GEMINI_API_KEY` or `GCP_PROJECT_ID` |
-| **OpenAI** | `gpt-5.2`                    | `OPENAI_API_KEY`                     |
-| **Claude** | `claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY`                  |
-
-### Option 1: Gemini (Default)
-
-```yaml
-- uses: WillowRyu/project-judge@main
-  with:
-    gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-  env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-### Option 2: OpenAI (GPT-5)
-
-```yaml
-- uses: WillowRyu/project-judge@main
-  with:
-    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-  env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-`.github/magi.yml`:
-
-```yaml
-provider:
-  type: openai
-  model: gpt-5.2 # optional
-```
-
-### Option 3: Claude (Anthropic)
-
-```yaml
-- uses: WillowRyu/project-judge@main
-  with:
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-  env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-`.github/magi.yml`:
-
-```yaml
-provider:
-  type: claude
-  model: claude-sonnet-4-5-20250929 # optional
-```
-
-### Option 4: GCP Vertex AI (Enterprise)
-
-```yaml
-- uses: google-github-actions/auth@v2
-  with:
-    credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-- uses: WillowRyu/project-judge@main
-  with:
-    gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
-  env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-### Full Workflow Example
-
-`.github/workflows/magi-review.yml`:
+1. Add the provider API key to your repository's Actions secrets.
+2. Merge `.github/magi.yml` into the PR's **base branch**. The Action deliberately reads configuration and guidelines from the immutable base commit, never from PR-controlled files.
+3. Add the workflow below. Replace `REVIEWED_COMMIT_SHA` with the full commit SHA of the version you have reviewed and pushed. This repository does not yet publish a stable release tag; do not use a moving `@main` ref in production.
 
 ```yaml
 name: MAGI Review
-
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
-
-permissions:
-  contents: read
-  pull-requests: write
-
-jobs:
-  magi-review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: WillowRyu/project-judge@main
-        with:
-          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-### Comment-Triggered Re-Review
-
-Run review only on PR open, and re-run via `/magi-review` comment:
-
-`.github/workflows/magi-review.yml`:
-
-```yaml
-name: MAGI Review
-
-on:
-  pull_request:
-    types: [opened] # Only on first open
+    types: [opened, synchronize, reopened, ready_for_review]
   issue_comment:
-    types: [created] # Re-trigger via comment
-
+    types: [created]
 permissions:
   contents: read
   pull-requests: write
-
+  issues: write
+concurrency:
+  group: magi-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
 jobs:
-  magi-review:
+  review:
     runs-on: ubuntu-latest
-    if: |
+    timeout-minutes: 15
+    if: >-
       github.event_name == 'pull_request' ||
-      (github.event_name == 'issue_comment' && 
-       github.event.issue.pull_request &&
-       contains(github.event.comment.body, '/magi-review'))
-
+      (github.event.issue.pull_request && github.event.comment.body == '/magi-review')
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/head', github.event.issue.number) || '' }}
-
-      - uses: WillowRyu/project-judge@main
+      - uses: WillowRyu/project-judge@REVIEWED_COMMIT_SHA
+        id: magi
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-**Usage:**
-| Trigger | When |
-|:--------|:-----|
-| PR Created | Auto-run once |
-| Code Push | ❌ No run |
-| `/magi-review` comment | ✅ Re-run |
+**No checkout step is needed.** `/magi-review` must be the whole comment. The Action verifies the comment author's repository write/maintain/admin permission through GitHub before reading policy or calling a model. Fork `pull_request` runs return `skipped` because provider secrets are unavailable; a maintainer can request a review by commenting `/magi-review` on the fork PR. Unsupported events and unauthorized comments do not publish or consume provider credits.
 
-## ⚙️ Configuration
-
-Customize behavior with `.github/magi.yml`:
+## Providers and models
 
 ```yaml
 version: 1
+provider:
+  type: openai                 # gemini | openai | claude
+  model: gpt-5.5               # optional; an explicit model is respected
+output:
+  language: en                # ko (default) | en
+```
 
-# Provider settings (gemini | openai | claude)
+Use `openai_api_key` or `anthropic_api_key` instead of `gemini_api_key` in the workflow for those providers. API keys may also be supplied as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` environment variables. `GITHUB_TOKEN` is required.
+
+| Provider | Default |
+|---|---|
+| Gemini | `gemini-3.5-flash`; automatic small tier uses `gemini-3.5-flash-lite` |
+| OpenAI | `gpt-5.5`, using Responses API with `store: false` |
+| Claude | `claude-sonnet-5` |
+
+Model precedence is **reviewer model → explicit global model → explicitly configured tier → provider default/automatic Gemini tier**. A reviewer using a different provider uses that provider's own default unless it has a model override. Automatic Gemini tiers are small (≤10 changed lines), medium (11–100), and large (>100). Medium and large use the supported stable Flash baseline; choose another supported model explicitly if needed. Model names are configurable so upgrades do not require changing source.
+
+For Vertex AI, authenticate with Application Default Credentials (for example Workload Identity Federation), then pass `gcp_project_id`. `gcp_location` is an optional explicit override and is always respected; otherwise the Action chooses the model's default location. When configuring multiple providers, supply every required key. Global provider credentials are also required.
+
+## Configuration
+
+Automatic discovery, in order: `.github/magi.yml`, `.github/magi.yaml`, `.magi.yml`, `.magi.yaml`. Use the `config_path` input for a different repository-relative path. A missing explicit file, unknown setting, invalid vote threshold, or unsafe file path is an error rather than silent fallback. All policy files must resolve inside the trusted root; symlinks to external files are rejected.
+
+```yaml
+version: 1
 provider:
   type: gemini
-  model: gemini-2.5-flash # optional
-
-# Voting settings
 voting:
-  required_approvals: 2 # Required approval count
-
-# Optimization & safety guard
+  required_approvals: 2
+  fail_on_rejection: false
+personas:
+  - id: security
+  - id: backend
+  - id: frontend
 optimization:
-  prompt_compression: true
   context_caching: true
+  prompt_compression: true
+  max_diff_tokens: 30000
+  max_tokens_per_file: 2500
+  # Optional explicit models by diff size:
+  # tiered_models:
+  #   small: gemini-3.5-flash-lite
+  #   medium: gemini-3.5-flash
+  #   large: gemini-3.5-flash
   hard_cut:
     enabled: true
     max_changed_files: 300
     max_changed_lines: 100000
-
-# Debate feature
 debate:
-  enabled: true
-  max_rounds: 1
-  trigger: disagreement # conflict | disagreement | always
-
-# Output settings
+  enabled: false
+  max_rounds: 1               # 1–5
+  trigger: disagreement       # conflict | disagreement | always
+  revote_after_debate: true
 output:
+  language: en
   pr_comment:
     enabled: true
-    style: detailed # summary | detailed
+    style: detailed           # summary | detailed
   labels:
     enabled: true
     approved: magi-approved
     rejected: magi-changes-requested
-
-# Notifications
-notifications:
-  slack:
-    enabled: true
-    notify_on: all # all | rejection | approval
-
-# Ignore files
 ignore:
-  files:
-    - "*.lock"
-    - ".generated."
-  paths:
-    - "node_modules/"
-    - "dist/"
-```
-
-Generated files are ignored by default (for example: `generated/`,
-`__generated__/`, `.generated.`, `.pb.`, `.g.dart`, `.graphql.dart`,
-`.designer.cs`).
-
-> **Note:** A `rejected` result does **not** fail the workflow check by itself. Gate merges using the `result` output (`approved` / `rejected` / `skipped` / `error`) or the applied label (e.g., branch protection on the `magi-changes-requested` label).
->
-> **Failed reviews abstain.** If a persona's model call fails, that vote is **excluded** from the tally — it never counts as an approval. If fewer valid reviews remain than `required_approvals` (quorum not reached), `result` is `error` and the action fails; just re-run it (usually a transient provider or rate-limit error).
-
-## 📱 Slack Notifications
-
-Send review results to Slack channel.
-
-### Setup
-
-1. **Create Slack Webhook:**
-   - Go to Slack → Apps → "Incoming Webhooks"
-   - Select channel and create webhook URL
-
-2. **Add to GitHub Secrets:**
-   - Add `SLACK_WEBHOOK_URL` to repository secrets
-
-3. **Update Workflow:**
-
-```yaml
-- uses: WillowRyu/project-judge@main
-  with:
-    gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-    slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
-```
-
-4. **Enable in magi.yml:**
-
-```yaml
+  use_defaults: true
+  files: ['*.lock']
+  paths: ['vendor/']
 notifications:
   slack:
-    enabled: true
-    notify_on: all # all | rejection | approval
+    enabled: false
+    notify_on: all             # all | rejection | approval
 ```
 
-### Slack Message Preview
+An `approve` contributes 1 vote and a valid `conditional` contributes 0.5. Failed, empty, malformed, or truncated responses abstain and never contribute. `required_approvals` must be a positive integer no larger than the reviewer count. Legacy `total_voters`, if supplied, must match that count.
 
-```
-🏛️ MAGI Review Result
+A rejection is nonblocking by default. Set `voting.fail_on_rejection: true` to fail the Action check for `rejected`; the output still remains `rejected`. A review with too few valid responses or incomplete code coverage returns `error` and fails the check. For branch protection, require the appropriate PR workflow check; a comment-triggered run is not a check attached to the PR head.
 
-#42 feat: add user authentication
+## Reviewers and team guidelines
 
-✅ Approved (2/3, 2 votes required)
-
-🔬 MELCHIOR  ✅ approve
-👩‍👧 BALTHASAR ⚠️ conditional
-💃 CASPER    ✅ approve
-
-[📋 View PR] [🔍 View Details]
-```
-
-## 💬 Debate Feature
-
-When personas disagree, they debate and may change their votes.
-
-### Configuration
-
-```yaml
-debate:
-  enabled: true
-  max_rounds: 1
-  trigger: disagreement # conflict | disagreement | always
-  revote_after_debate: true
-```
-
-### Trigger Options
-
-| Trigger        | Description                             |
-| -------------- | --------------------------------------- |
-| `conflict`     | Only when both approve and reject exist |
-| `disagreement` | When votes are not unanimous            |
-| `always`       | Always debate (for testing)             |
-
-### Vote Changes
-
-After debate, vote changes are shown as:
-
-- `❌ reject → ⚠️ conditional`
-- `⚠️ conditional → ✅ approve`
-
-## 🎨 Persona Customization
-
-### Per-Persona Provider
-
-Use different LLM providers for each persona:
+The default reviewers remain MELCHIOR (technical correctness), BALTHASAR (maintainability), and CASPER (user experience). Neutral builtins are `security`, `backend`, and `frontend`.
 
 ```yaml
 personas:
-  - id: melchior
+  - id: security
+    name: Security reviewer
+    role: Application security engineer
     provider: openai
-    model: gpt-5.2-pro
-  - id: balthasar
+    model: gpt-5.5
+  - id: backend
     provider: claude
-    model: claude-opus-4-5-20251101
-  - id: casper
-    provider: gemini
-    model: gemini-2.5-flash
+  - id: custom
+    name: Domain reviewer
+    builtin: false
+    guideline_file: docs/review/domain.md
 ```
 
-> **Note:** Provide all required API keys when using per-persona providers. The action validates every referenced provider up front and fails fast with a clear error if a key is missing.
+Guideline precedence: explicit `guideline_file` → `<id>.md` in `.github/magi/`, `.magi/`, or `docs/magi/` → builtin (unless `builtin: false`). `name`, `emoji`, and `role` override builtin metadata. A shared `common.md` (or `COMMON.md`) in the same search directories is appended once. Reviewer IDs must be unique safe names. Merge policy changes into the base branch before expecting them to affect reviews.
 
-### Common Guidelines
+Custom guidelines must request this JSON response contract:
 
-Create `.github/magi/common.md` to add guidelines for all personas:
-
-```markdown
-# Team Guidelines
-
-## Project Context
-
-- This is an e-commerce platform
-- PCI DSS compliance required
-
-## Team Conventions
-
-- All APIs follow REST conventions
-- Error codes use ERR\_ prefix
+```json
+{"vote":"approve","reason":"Brief reason","details":"Review text","suggestions":[]}
 ```
 
-### Custom Persona Guidelines
+Allowed votes: `approve`, `reject`, `conditional`. `reason` must be a nonblank string and `details` must be a string; `suggestions` must be an array of strings. The selected output language is supplied by the review and debate prompts.
 
-Create `.github/magi/melchior.md` to fully customize individual personas.
+## Coverage, cost, and outcomes
 
-**Priority:**
+The Action reviews GitHub's patches, not a full repository checkout. Ignored files are excluded before coverage is calculated. Missing patches, GitHub-truncated patches, and diff-budget truncation are visible in the comment and `coverage` output and prevent approval. An incomplete GitHub file listing also fails before review (the API caps results at 3,000 files), with `coverage.unavailableFiles` reporting the missing count. Split large PRs, adjust exclusions deliberately, or increase the budget to obtain complete coverage.
 
-1. Custom guideline file (if exists)
-2. Built-in default (fallback)
-3. \+ common.md (always appended)
+Diff budgets are conservative **estimates**, not exact billing token counts, and do not include guidelines, PR description, or debate opinions. Three reviewers normally require three model calls; caching, retries, and optional debate can add requests. Disabling `prompt_compression` preserves unchanged patch context but does not disable the budget. Default ignored files include generated artifacts, lockfiles, build outputs, and dependencies; set `ignore.use_defaults: false` to replace that default policy.
 
-## 📊 Output Example
+| Output | Meaning |
+|---|---|
+| `result` | `approved`, `rejected`, `skipped`, or `error` |
+| `skip_reason` | Empty on normal execution; reason when skipped |
+| `votes` | JSON reviewer votes; failures use `vote: "abstain"`, `error: true` |
+| `coverage` | JSON with `complete`, `totalFiles`, `reviewedFiles`, `omittedFiles`, `truncatedFiles`; `{}` before diff analysis |
+| `reviewed_head_sha` | Commit examined by this run; trust it only with the final `result` |
+| `comment_status` | `success`, `failed`, `skipped` |
+| `labels_status` | Verdict-label publication status; `failed` also reports cleanup failure |
+| `slack_status` | `success`, `failed`, `skipped`; notification filters return `skipped` |
 
-```
-## 🏛️ MAGI System Review Result
+Stale verdict labels are cleared before a new authorized review and on skipped/error results when labels are enabled. If the PR changes while models run, the old result is skipped without publishing a new verdict. Comment or notification failures remain nonblocking and are exposed in their status outputs.
 
-### ✅ Approved (2/3)
+For Slack, set `notifications.slack.enabled: true` and pass `slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}` in the Action inputs. `notify_on: rejection` applies only to determined rejections; `all` also includes errors reported after reviewing.
 
-| Persona | Vote | Reason |
-|:-------:|:----:|--------|
-| 🔬 MELCHIOR | ✅ | Algorithm efficient, no security issues |
-| 👩‍👧 BALTHASAR | ❌ reject → ⚠️ conditional | After debate: maintainability concerns addressed |
-| 💃 CASPER | ✅ | UX consistency maintained |
-
-<details>
-<summary>🔬 MELCHIOR Details</summary>
-...
-</details>
-```
-
-## 📁 Project Structure
-
-```
-project-judge/
-├── src/
-│   ├── index.ts              # Main entry point
-│   ├── config/               # Config loader & schema
-│   ├── providers/            # LLM Providers (Gemini, OpenAI, Claude)
-│   ├── personas/             # Personas & guidelines
-│   │   └── built-in/         # Built-in defaults
-│   ├── review/               # Review engine
-│   ├── notifications/        # Slack notifications
-│   └── github/               # GitHub API integration
-├── action.yml                # GitHub Action metadata
-└── .github/workflows/        # Example workflows
-```
-
-## 🔧 Development
+## Development and migration
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Type check
+nvm install
+nvm use
+corepack enable
+pnpm install --frozen-lockfile
 pnpm typecheck
-
-# Build
-pnpm build
-
-# Test
 pnpm test
+pnpm build
+pnpm check:dist
+pnpm smoke:dist
+pnpm audit
 ```
 
-## 📝 License
+Node 24 and the exact pnpm version in `packageManager` are required. `pnpm build` replaces generated `dist/`; include it with source changes. CI checks the bundle, types, tests, and dependency advisories. Dependabot proposes weekly package/Action updates. CI no longer pushes an automatic dist commit after a source merge.
+
+Changes in 0.2: policy now comes from PR base, explicit settings are validated, malformed reviews abstain, incomplete coverage fails, OpenAI uses Responses, and Node 20 is no longer supported. Existing generated-code exclusions and the default Korean/MAGI experience are retained. Configure the neutral presets and English output explicitly. TypeScript 5 and Zod 3 are retained to avoid unrelated major migrations.
+
+## License
 
 MIT
-
----
-
-📖 [한국어 문서 (Korean)](./README_KO.md)

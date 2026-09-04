@@ -16,6 +16,8 @@ export interface PullRequestInfo {
   baseBranch: string;
   headBranch: string;
   headSha: string;
+  baseSha: string;
+  changedFiles: number;
 }
 
 export interface GitHubClient {
@@ -63,6 +65,8 @@ export async function getPullRequest(
     baseBranch: pr.base.ref,
     headBranch: pr.head.ref,
     headSha: pr.head.sha,
+    baseSha: pr.base.sha,
+    changedFiles: pr.changed_files,
   };
 }
 

@@ -50,14 +50,29 @@ export function countVotes(reviews: ReviewResult[]): VotingSummary {
   });
 }
 
-export function getVoteResultString(summary: VotingSummary): string {
+export function getVoteResultString(
+  summary: VotingSummary & { incomplete?: boolean },
+  language: "ko" | "en" = "ko",
+): string {
+  if (summary.incomplete) {
+    return language === "en" ? "⚠️ Incomplete review" : "⚠️ 검토 범위 불완전";
+  }
   const errSuffix = summary.errored > 0 ? `, ${summary.errored} 실패` : "";
 
   if (summary.undetermined) {
+    if (language === "en") {
+      return `⚠️ Undetermined (${summary.validVoters} valid votes, ${summary.requiredApprovals} required${summary.errored > 0 ? `, ${summary.errored} failed` : ""})`;
+    }
     return `⚠️ 판정 불가 (유효 ${summary.validVoters}표, ${summary.requiredApprovals}표 필요${errSuffix})`;
   }
   if (summary.passed) {
+    if (language === "en") {
+      return `✅ Approved (${summary.approvals}${summary.conditionals > 0 ? `+${summary.conditionals} conditional` : ""}/${summary.validVoters}${summary.errored > 0 ? `, ${summary.errored} failed` : ""})`;
+    }
     return `✅ 승인 (${summary.approvals}${summary.conditionals > 0 ? `+${summary.conditionals}조건부` : ""}/${summary.validVoters}${errSuffix})`;
+  }
+  if (language === "en") {
+    return `❌ Rejected (${summary.approvals}/${summary.validVoters}, ${summary.requiredApprovals} required${summary.errored > 0 ? `, ${summary.errored} failed` : ""})`;
   }
   return `❌ 거부 (${summary.approvals}/${summary.validVoters}, ${summary.requiredApprovals}표 필요${errSuffix})`;
 }

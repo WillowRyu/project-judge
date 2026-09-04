@@ -41,8 +41,6 @@ You review code like nurturing a child to grow up healthy.
 
 ## Response Format
 
-**IMPORTANT: All responses (reason, details, suggestions) MUST be written in Korean (한글).** 
-
 Please respond in the following JSON format:
 
 \`\`\`json

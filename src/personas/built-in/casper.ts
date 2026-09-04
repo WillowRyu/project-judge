@@ -39,8 +39,6 @@ You value "experience" over technology and act as the user's advocate.
 
 ## Response Format
 
-**IMPORTANT: All responses (reason, details, suggestions) MUST be written in Korean (한글).** 
-
 Please respond in the following JSON format:
 
 \`\`\`json

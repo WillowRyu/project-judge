@@ -35,6 +35,7 @@ export interface VotingSummary {
   conditionals: number;
   errored: number; // 실패로 집계 제외된 수
   validVoters: number; // 유효 리뷰 수(전체 - errored)
+  incomplete?: boolean; // Some changed files or diff lines could not be reviewed
   undetermined: boolean; // 유효 리뷰 < 정족수 → 판정 불가
   passed: boolean;
   requiredApprovals: number;

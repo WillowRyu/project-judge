@@ -3,7 +3,7 @@ import { postOrUpdateComment } from "./poster";
 import type { GitHubClient } from "./client";
 import type { ReviewResult, VotingSummary } from "../personas/persona.interface";
 
-function makeClient(comments: Array<{ id: number; body: string }>) {
+function makeClient(comments: Array<{ id: number; body: string; user?: {type:string} }>) {
   const paginate = vi.fn().mockResolvedValue(comments);
   const updateComment = vi.fn().mockResolvedValue({});
   const createComment = vi.fn().mockResolvedValue({});
@@ -35,8 +35,8 @@ const summary: VotingSummary = {
 describe("postOrUpdateComment", () => {
   it("updates the existing MAGI comment found on a later page", async () => {
     const marker = "<!-- magi-review-comment -->";
-    const many = Array.from({ length: 40 }, (_, i) => ({ id: i + 1, body: `c${i}` }));
-    many.push({ id: 999, body: `${marker}\nold` });
+    const many: Array<{id:number;body:string;user?:{type:string}}> = Array.from({ length: 40 }, (_, i) => ({ id: i + 1, body: `c${i}` }));
+    many.push({ id: 999, body: `${marker}\nold`, user:{type:"Bot"} });
     const { client, paginate, updateComment, createComment } = makeClient(many);
 
     await postOrUpdateComment(client, 42, reviews, summary);
@@ -57,4 +57,11 @@ describe("postOrUpdateComment", () => {
     expect(createComment).toHaveBeenCalledOnce();
     expect(updateComment).not.toHaveBeenCalled();
   });
+});
+
+it("does not mistake a contributor's copied marker for the bot comment", async () => {
+  const {client,createComment,updateComment}=makeClient([{id:10,body:"<!-- magi-review-comment -->",user:{type:"User"}}]);
+  await postOrUpdateComment(client,42,reviews,summary);
+  expect(updateComment).not.toHaveBeenCalled();
+  expect(createComment).toHaveBeenCalledOnce();
 });

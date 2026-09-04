@@ -1,8 +1,8 @@
-import * as fs from "fs";
 import * as path from "path";
 import { Persona } from "./persona.interface";
 import { BUILT_IN_PERSONAS, isBuiltInPersona } from "./built-in";
 import { PersonaConfig } from "../config/schema";
+import { readWorkspaceFileIfExists } from "../config/workspace-path";
 
 /**
  * Persona Loader
@@ -30,10 +30,8 @@ function findCustomGuideline(
 
   for (const basePath of CUSTOM_GUIDELINE_PATHS) {
     for (const fileName of fileVariants) {
-      const fullPath = path.join(workspacePath, basePath, fileName);
-      if (fs.existsSync(fullPath)) {
-        return fs.readFileSync(fullPath, "utf-8");
-      }
+      const guideline = readWorkspaceFileIfExists(workspacePath, path.posix.join(basePath, fileName));
+      if (guideline !== null) return guideline;
     }
   }
 
@@ -46,10 +44,8 @@ function findCustomGuideline(
 function findCommonGuideline(workspacePath: string): string {
   for (const basePath of CUSTOM_GUIDELINE_PATHS) {
     for (const fileName of COMMON_GUIDELINE_FILES) {
-      const fullPath = path.join(workspacePath, basePath, fileName);
-      if (fs.existsSync(fullPath)) {
-        return fs.readFileSync(fullPath, "utf-8");
-      }
+      const guideline = readWorkspaceFileIfExists(workspacePath, path.posix.join(basePath, fileName));
+      if (guideline !== null) return guideline;
     }
   }
 
@@ -81,8 +77,13 @@ export async function loadPersona(
   personaId: string,
   config?: PersonaConfig,
 ): Promise<Persona> {
-  // 1. 커스텀 지침 확인
-  const customGuideline = findCustomGuideline(workspacePath, personaId);
+  const explicitGuideline = config?.guideline_file
+    ? readWorkspaceFileIfExists(workspacePath, config.guideline_file)
+    : null;
+  if (config?.guideline_file && explicitGuideline === null) {
+    throw new Error(`Guideline file not found: ${config.guideline_file}`);
+  }
+  const customGuideline = explicitGuideline ?? findCustomGuideline(workspacePath, personaId);
 
   // 2. 기본 지침 (커스텀 없으면)
   let baseGuideline: string;
@@ -97,7 +98,7 @@ export async function loadPersona(
       emoji: config?.emoji ?? "🤖",
       role: config?.role ?? "Reviewer",
     };
-  } else if (isBuiltInPersona(personaId)) {
+  } else if (config?.builtin !== false && isBuiltInPersona(personaId)) {
     const builtIn = BUILT_IN_PERSONAS[personaId];
     baseGuideline = builtIn.guideline;
     meta = {
@@ -108,7 +109,7 @@ export async function loadPersona(
     };
   } else {
     throw new Error(
-      `Unknown persona: ${personaId}. No built-in or custom guideline found.`,
+      `Unknown persona: ${personaId}. No custom guideline found and builtin fallback is disabled or unavailable.`,
     );
   }
 
@@ -117,6 +118,13 @@ export async function loadPersona(
 
   // 4. 지침 합성
   const finalGuideline = mergeGuidelines(baseGuideline, commonGuideline);
+
+  meta = {
+    ...meta,
+    name: config?.name ?? meta.name,
+    emoji: config?.emoji ?? meta.emoji,
+    role: config?.role ?? meta.role,
+  };
 
   return {
     ...meta,

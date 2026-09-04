@@ -37,8 +37,6 @@ You are a cold, technical senior engineer who values data and logic over emotion
 
 ## Response Format
 
-**IMPORTANT: All responses (reason, details, suggestions) MUST be written in Korean (한글).** 
-
 Please respond in the following JSON format:
 
 \`\`\`json
