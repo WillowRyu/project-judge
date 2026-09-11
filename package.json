@@ -23,19 +23,19 @@
   "dependencies": {
     "@actions/core": "^3.0.1",
     "@actions/github": "^9.1.1",
-    "@anthropic-ai/sdk": "^0.123.0",
+    "@anthropic-ai/sdk": "^0.124.0",
     "@google/genai": "^2.21.0",
     "minimatch": "^10.2.6",
-    "openai": "^7.9.0",
+    "openai": "^7.10.0",
     "yaml": "^2.9.0",
-    "zod": "^3.25.76"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
+    "@types/node": "^26.5.0",
     "@vercel/ncc": "^0.45.0",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.6",
-    "vitest": "^4.1.11"
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
   },
   "engines": {
     "node": ">=24"
